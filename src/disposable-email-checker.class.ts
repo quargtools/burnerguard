@@ -7,14 +7,16 @@ import {DisposableEmailCheckerOptions} from "./disposable-email-checker-options.
 const EMAIL_REGEXP = /^(?=.{1,254}$)(?=.{1,64}@)[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)$/;
 
 export class DisposableEmailChecker {
-    private disposableDomains: Set<string>;
+    private static readonly BUNDLED_BLOCKLIST_PATH = path.resolve(__dirname, '..', 'data', 'BLOCKLIST');
+
+    private domains: Set<string>;
 
     /**
      * Private constructor to ensure instances are only created via the static async create method.
      * @param domains - The Set of disposable domains.
      */
     private constructor(domains: Set<string>) {
-        this.disposableDomains = domains;
+        this.domains = domains;
     }
 
     /**
@@ -24,38 +26,51 @@ export class DisposableEmailChecker {
      * @returns A Promise that resolves to a fully initialized DisposableEmailChecker instance.
      */
     public static async create(options?: DisposableEmailCheckerOptions): Promise<DisposableEmailChecker> {
-        let rawContent: string;
+        const { content, source } = await this.loadContent(options);
+        console.log(`Loading blocklist from: ${source}`);
 
+        const domains = this.parseDomains(content);
+        console.log(`Blocklist loaded with ${domains.size} domains.`);
+
+        return new DisposableEmailChecker(domains);
+    }
+
+    private static async loadContent(options?: DisposableEmailCheckerOptions): Promise<BlocklistLoadResult> {
         if (options?.filePath) {
-            console.log(`Loading blocklist from local file: ${options.filePath}`);
-            try {
-            rawContent = await fs.readFile(options.filePath, { encoding: 'utf8' });
-            } catch (error) {
-                console.error(`Error loading bundled blocklist: ${error instanceof Error ? error.message : String(error)}`);
-                throw new Error(`Failed to load default disposable domains blocklist. Make sure 'npm run update-blocklist' was run and the file is included in package.json 'files' array. Original error: ${error instanceof Error ? error.message : String(error)}`);
-            }
-        } else if (options?.url) {
-            console.log(`Loading blocklist from URL: ${options.url}`);
+            const content = await this.loadFile(options.filePath, 'custom blocklist');
+            return { content, source: options.filePath };
+        }
+
+        if (options?.url) {
             const response = await fetch(options.url);
             if (!response.ok) {
                 throw new Error(`Failed to fetch blocklist from ${options.url}: ${response.statusText}`);
             }
-            rawContent = await response.text();
-        } else {
-            // Default: Load from bundled list (generated at build time)
-            const bundledFilePath = path.resolve(__dirname, '..', 'data', 'BLOCKLIST');
-            console.log(`Loading bundled blocklist from: ${bundledFilePath}`);
-            try {
-                rawContent = await fs.readFile(bundledFilePath, { encoding: 'utf8' });
-            } catch (error) {
-                console.error(`Error loading bundled blocklist: ${error instanceof Error ? error.message : String(error)}`);
-                throw new Error(`Failed to load default disposable domains blocklist. Make sure 'npm run update-blocklist' was run and the file is included in package.json 'files' array. Original error: ${error instanceof Error ? error.message : String(error)}`);
-            }
+            const content = await response.text();
+            return { content, source: options.url };
         }
 
-        const domains = DisposableEmailChecker.parseBlocklistContent(rawContent);
-        console.log(`Blocklist loaded with ${domains.size} domains.`);
-        return new DisposableEmailChecker(domains);
+        const content = await this.loadFile(this.BUNDLED_BLOCKLIST_PATH, 'bundled blocklist');
+        return { content, source: this.BUNDLED_BLOCKLIST_PATH };
+    }
+
+
+
+    /**
+     * Loads the content of a file asynchronously as a UTF-8 encoded string.
+     *
+     * @param {string} filePath - The path to the file that needs to be loaded.
+     * @param {string} errorContext - A descriptive context of the file usage to include in error messages.
+     * @return {Promise<string>} The content of the file as a UTF-8 encoded string.
+     * @throws {Error} If the file cannot be loaded, an error is thrown with a context-specific message.
+     */
+    private static async loadFile(filePath: string, errorContext: string): Promise<string> {
+        try {
+            return await fs.readFile(filePath, { encoding: 'utf8' });
+        } catch (error) {
+            console.error(`Error loading ${errorContext}: ${error instanceof Error ? error.message : String(error)}`);
+            throw new Error(`Failed to load ${errorContext}. Make sure 'npm run update-blocklist' was run and the file is included in package.json 'files' array. Original error: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     /**
@@ -64,14 +79,14 @@ export class DisposableEmailChecker {
      * @param content - The raw string content of the blocklist file.
      * @returns A Set of disposable domains.
      */
-    private static parseBlocklistContent(content: string): Set<string> {
+    private static parseDomains(content: string): Set<string> {
         const domains = new Set<string>();
         content.split('\n').forEach(line => {
             const trimmedLine = line.trim();
             if (trimmedLine.length === 0 || trimmedLine.startsWith('#')) {
-                return; // Skip empty lines and comments
+                return;
             }
-            domains.add(trimmedLine.toLowerCase()); // Ensure lowercase for case-insensitive matching
+            domains.add(trimmedLine.toLowerCase());
         });
         return domains;
     }
@@ -83,7 +98,7 @@ export class DisposableEmailChecker {
      */
     private getDomainFromEmail(email: string): string | null {
         const match = EMAIL_REGEXP.exec(email);
-        return match ? match[1].toLowerCase() : null; // Convert to lowercase for consistent matching
+        return match ? match[1].toLowerCase() : null;
     }
 
     /**
@@ -94,12 +109,9 @@ export class DisposableEmailChecker {
      */
     public isDisposable(email: string): boolean {
         const domain = this.getDomainFromEmail(email);
-        if (!domain) {
-            // Treat invalid email formats as non-disposable by default for a blocklist.
-            return false;
-        }
-        return this.disposableDomains.has(domain);
+        return domain ? this.domains.has(domain) : false;
     }
+
 
     /**
      * Checks a list of email addresses.
@@ -122,3 +134,9 @@ export class DisposableEmailChecker {
         return emails.some(email => this.isDisposable(email));
     }
 }
+
+interface BlocklistLoadResult {
+    content: string;
+    source: string;
+}
+

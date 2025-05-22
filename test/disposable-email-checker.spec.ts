@@ -38,7 +38,7 @@ describe('DisposableEmailChecker (Factory Pattern)', () => {
         const checker = await DisposableEmailChecker.create();
         expect(checker).toBeInstanceOf(DisposableEmailChecker);
         // After creation, the internal Set should not be empty
-        expect((checker as any).disposableDomains.size).toBeGreaterThan(0);
+        expect((checker as any).domains.size).toBeGreaterThan(0);
     });
 
     it('should correctly identify disposable domains using bundled data', async () => {
