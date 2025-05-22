@@ -1,7 +1,7 @@
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import {DisposableEmailCheckerOptions} from "./disposable-email-checker-options.interface";
+import {DisposableEmailCheckerOptions} from "./interfaces/disposable-email-checker-options.interface";
+import {DomainListService} from './domain-list.service';
 
 // Regex to extract the domain from an email address
 const EMAIL_REGEXP = /^(?=.{1,254}$)(?=.{1,64}@)[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)$/;
@@ -9,16 +9,15 @@ const EMAIL_REGEXP = /^(?=.{1,254}$)(?=.{1,64}@)[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(
 export class DisposableEmailChecker {
     private static readonly BUNDLED_BLOCKLIST_PATH = path.resolve(__dirname, '..', 'data', 'BLOCKLIST');
 
-    private disposableDomains: Set<string>;
-    private allowedDomains: Set<string>;
+    private readonly domainListService: DomainListService;
 
     /**
      * Private constructor to ensure instances are only created via the static async create method.
-     * @param domains - The Set of disposable domains.
+     * @param disposableDomains - The Set of disposable domains.
+     * @param allowedDomains - The Set of allowed domains.
      */
-    private constructor(domains: Set<string>) {
-        this.disposableDomains = domains;
-        this.allowedDomains = new Set<string>();
+    private constructor(private disposableDomains: Set<string>, private allowedDomains: Set<string> = new Set()) {
+        this.domainListService = new DomainListService(path.dirname(DisposableEmailChecker.BUNDLED_BLOCKLIST_PATH));
     }
 
     /**
@@ -28,69 +27,41 @@ export class DisposableEmailChecker {
      * @returns A Promise that resolves to a fully initialized DisposableEmailChecker instance.
      */
     public static async create(options?: DisposableEmailCheckerOptions): Promise<DisposableEmailChecker> {
-        const { content, source } = await this.loadContent(options);
+        let { content, source } = await this.loadContent(options);
         console.log(`Loading blocklist from: ${source}`);
 
-        const domains = this.parseDomains(content);
-        console.log(`Blocklist loaded with ${domains.size} domains.`);
+        const disposableDomains = DomainListService.getInstance().processDomainList(content);
+        console.log(`Blocklist loaded with ${disposableDomains.count} domains.`);
 
-        return new DisposableEmailChecker(domains);
+        let allowList: Set<string>| undefined;
+        if (options?.useUpstreamAllowlist) {
+            let {content, source} = await this.loadContent(options);
+            console.log(`Loading blocklist from: ${source}`);
+
+            const domains = DomainListService.getInstance().processDomainList(content);
+            console.log(`Allowlist loaded with ${domains.count} domains.`);
+
+            allowList = new Set(domains.domains);
+        }
+
+        return new DisposableEmailChecker(new Set(disposableDomains.domains), allowList);
     }
 
     private static async loadContent(options?: DisposableEmailCheckerOptions): Promise<BlocklistLoadResult> {
+        const domainListService = DomainListService.getInstance();
+
         if (options?.filePath) {
-            const content = await this.loadFile(options.filePath, 'custom blocklist');
+            const content = await domainListService.loadFile(options.filePath, 'custom list');
             return { content, source: options.filePath };
         }
 
         if (options?.url) {
-            const response = await fetch(options.url);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch blocklist from ${options.url}: ${response.statusText}`);
-            }
-            const content = await response.text();
+            const content = await domainListService.fetchDomainList(options.url);
             return { content, source: options.url };
         }
 
-        const content = await this.loadFile(this.BUNDLED_BLOCKLIST_PATH, 'bundled blocklist');
+        const content = await domainListService.loadFile(this.BUNDLED_BLOCKLIST_PATH, 'bundled list');
         return { content, source: this.BUNDLED_BLOCKLIST_PATH };
-    }
-
-
-
-    /**
-     * Loads the content of a file asynchronously as a UTF-8 encoded string.
-     *
-     * @param {string} filePath - The path to the file that needs to be loaded.
-     * @param {string} errorContext - A descriptive context of the file usage to include in error messages.
-     * @return {Promise<string>} The content of the file as a UTF-8 encoded string.
-     * @throws {Error} If the file cannot be loaded, an error is thrown with a context-specific message.
-     */
-    private static async loadFile(filePath: string, errorContext: string): Promise<string> {
-        try {
-            return await fs.readFile(filePath, { encoding: 'utf8' });
-        } catch (error) {
-            console.error(`Error loading ${errorContext}: ${error instanceof Error ? error.message : String(error)}`);
-            throw new Error(`Failed to load ${errorContext}. Make sure 'npm run update-blocklist' was run and the file is included in package.json 'files' array. Original error: ${error instanceof Error ? error.message : String(error)}`);
-        }
-    }
-
-    /**
-     * Parses the raw blocklist content into a Set of lowercase domains.
-     * Made static as it's part of the creation process and doesn't depend on an instance.
-     * @param content - The raw string content of the blocklist file.
-     * @returns A Set of disposable domains.
-     */
-    private static parseDomains(content: string): Set<string> {
-        const domains = new Set<string>();
-        content.split('\n').forEach(line => {
-            const trimmedLine = line.trim();
-            if (trimmedLine.length === 0 || trimmedLine.startsWith('#')) {
-                return;
-            }
-            domains.add(trimmedLine.toLowerCase());
-        });
-        return domains;
     }
 
     /**
