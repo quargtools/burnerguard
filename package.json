@@ -1,0 +1,81 @@
+{
+  "name": "@floracodex/disposible-email-checker",
+  "version": "1.0.0",
+  "description": "A highly efficient library for detecting disposable (burner) email domains using the disposable-email-domains blocklist. Optimized for low-resource environments, supporting local file, URL, and bundled data sources.",
+  "keywords": [
+    "email",
+    "disposable",
+    "burner",
+    "tempmail",
+    "blocklist",
+    "whitelist",
+    "domain",
+    "validation",
+    "spam",
+    "node",
+    "typescript",
+    "email-validation",
+    "security"
+  ],
+  "author": "Michael De Soto",
+  "private": false,
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "data/**",
+    "dist/**/*",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rimraf dist && tsc -p tsconfig.json",
+    "lint": "eslint \"{src,test}/**/*.ts\" --fix",
+    "prepublishOnly": "npm run build && npm run update-blocklist",
+    "test": "jest --config ./test/jest-e2e.json",
+    "test:watch": "jest --config ./test/jest-e2e.json --watch",
+    "update-blocklist": "ts-node scripts/update-blocklist.ts",
+    "watch": "tsc --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/floracodex/disposable-email-checker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/floracodex/disposable-email-checker/issues"
+  },
+  "homepage": "https://github.com/floracodex/disposable-email-checker#readme",
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.2.0",
+    "@eslint/js": "^9.27.0",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^22.15.2",
+    "@typescript-eslint/eslint-plugin": "^8.32.1",
+    "@typescript-eslint/parser": "^8.32.1",
+    "eslint": "^9.26.0",
+    "globals": "^16.1.0",
+    "jest": "^29.7.0",
+    "rimraf": "^6.0.1",
+    "ts-jest": "^29.1.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.1"
+  }
+}
