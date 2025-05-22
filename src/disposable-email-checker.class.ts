@@ -9,14 +9,16 @@ const EMAIL_REGEXP = /^(?=.{1,254}$)(?=.{1,64}@)[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(
 export class DisposableEmailChecker {
     private static readonly BUNDLED_BLOCKLIST_PATH = path.resolve(__dirname, '..', 'data', 'BLOCKLIST');
 
-    private domains: Set<string>;
+    private disposableDomains: Set<string>;
+    private allowedDomains: Set<string>;
 
     /**
      * Private constructor to ensure instances are only created via the static async create method.
      * @param domains - The Set of disposable domains.
      */
     private constructor(domains: Set<string>) {
-        this.domains = domains;
+        this.disposableDomains = domains;
+        this.allowedDomains = new Set<string>();
     }
 
     /**
@@ -92,26 +94,27 @@ export class DisposableEmailChecker {
     }
 
     /**
-     * Extracts the domain from an email address.
-     * @param email - The email address.
-     * @returns The domain string or null if not a valid email format.
+     * Explicitly marks a domain as allowed, overriding the disposable blocklist for this instance.
+     * The domain will be converted to lowercase for consistent matching.
+     * @param domain - The domain to add to the allowlist (e.g., "mycompany.com").
      */
-    private getDomainFromEmail(email: string): string | null {
-        const match = EMAIL_REGEXP.exec(email);
-        return match ? match[1].toLowerCase() : null;
+    public addAllowedDomain(domain: string): void {
+        domain = domain.trim();
+        if (domain === '') {
+            console.warn('Attempted to add an invalid domain to allowlist:', domain);
+            return;
+        }
+        this.allowedDomains.add(domain.toLowerCase());
     }
 
-    /**
-     * Checks if a single email address's domain is in the disposable list.
-     * This method is now SYNCHRONOUS, as the instance is guaranteed to be initialized.
-     * @param email - The email address to check.
-     * @returns true if the domain is disposable, false otherwise.
-     */
-    public isDisposable(email: string): boolean {
-        const domain = this.getDomainFromEmail(email);
-        return domain ? this.domains.has(domain) : false;
+    public addDisposableDomain(domain: string): void {
+        domain = domain.trim();
+        if (domain === '') {
+            console.warn('Attempted to add an invalid domain to disposable list:', domain);
+            return;
+        }
+        this.disposableDomains.add(domain.toLowerCase());
     }
-
 
     /**
      * Checks a list of email addresses.
@@ -132,6 +135,91 @@ export class DisposableEmailChecker {
      */
     public containsDisposable(emails: string[]): boolean {
         return emails.some(email => this.isDisposable(email));
+    }
+
+    /**
+     * Filters out disposable email addresses from a list of emails.
+     *
+     * @param {string[]} emails - The array of email addresses to be filtered.
+     * @return {string[]} An array of non-disposable email addresses.
+     */
+    public getDisposableEmails(emails: string[]): string[] {
+        if (!Array.isArray(emails)) {
+            return [];
+        }
+        return emails.filter(email => this.isDisposable(email));
+    }
+
+    /**
+     * Retrieves the count of disposable domains.
+     *
+     * @return {number} The number of disposable domains.
+     */
+    public getDomainDisposableDomainCount(): number {
+        return this.disposableDomains.size;
+    }
+
+    /**
+     * Extracts the domain from an email address.
+     * @param email - The email address.
+     * @returns The domain string or null if not a valid email format.
+     */
+    public getDomainFromEmail(email: string): string | null {
+        const match = EMAIL_REGEXP.exec(email);
+        return match ? match[1].toLowerCase() : null;
+    }
+
+    /**
+     * Filters the provided array of email addresses to exclude disposable email addresses.
+     *
+     * @param {string[]} emails - An array of email addresses to be filtered.
+     * @return {string[]} A new array containing only non-disposable email addresses.
+     */
+    public getNonDisposableEmails(emails: string[]): string[] {
+        if (!Array.isArray(emails)) {
+            return [];
+        }
+        return emails.filter(email => !this.isDisposable(email));
+    }
+
+    /**
+     * Checks if a single email address's domain is in the disposable list.
+     * This method is now SYNCHRONOUS, as the instance is guaranteed to be initialized.
+     * @param email - The email address to check.
+     * @returns true if the domain is disposable, false otherwise.
+     */
+    public isDisposable(email: string): boolean {
+        const domain = this.getDomainFromEmail(email);
+        if (!domain) {
+            return false;
+        }
+
+        // Check against the explicit allowlist FIRST
+        // Then, check against the main disposable domains blocklist
+        return !this.allowedDomains.has(domain) ? this.disposableDomains.has(domain) : false;
+    }
+
+    /**
+     * Determines whether a given domain is disposable.
+     *
+     * @param {string} domain - The domain name to be checked for disposability.
+     * @return {boolean} Returns true if the domain is disposable, otherwise false.
+     */
+    public isDomainDisposable(domain: string): boolean {
+        if (!domain || domain.trim() === '') {
+            return false;
+        }
+        return this.disposableDomains.has(domain.toLowerCase());
+    }
+
+    /**
+     * Validates whether the provided email string conforms to a standard email syntax.
+     *
+     * @param email The email address string to be validated.
+     * @return Returns true if the email string matches the expected syntax, otherwise false.
+     */
+    public isValidEmailSyntax(email: string): boolean {
+        return EMAIL_REGEXP.test(email);
     }
 }
 
