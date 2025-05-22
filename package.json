@@ -35,6 +35,7 @@
     "test": "jest --config ./test/jest-e2e.json",
     "test:watch": "jest --config ./test/jest-e2e.json --watch",
     "update-blocklist": "ts-node scripts/update-blocklist.ts",
+    "version:patch": "npm version patch --no-git-tag-version",
     "watch": "tsc --watch"
   },
   "repository": {
