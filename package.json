@@ -1,21 +1,24 @@
 {
-  "name": "@floracodex/disposable-email-checker",
+  "name": "@quarg/burnerguard",
   "version": "1.0.0",
-  "description": "A highly efficient library for detecting disposable (burner) email domains using the disposable-email-domains blocklist. Optimized for low-resource environments, supporting local file, URL, and bundled data sources.",
+  "description": "Detect disposable and burner email addresses. Static blocklist mode with zero dependencies, or connect to the BurnerGuard API for real-time risk scoring.",
   "keywords": [
     "email",
     "disposable",
     "burner",
     "tempmail",
     "blocklist",
-    "whitelist",
+    "allowlist",
     "domain",
     "validation",
     "spam",
+    "risk-score",
     "node",
     "typescript",
     "email-validation",
-    "security"
+    "security",
+    "burnerguard",
+    "quarg"
   ],
   "author": "Michael De Soto",
   "private": false,
@@ -37,7 +40,8 @@
     "README.md"
   ],
   "scripts": {
-    "build": "rimraf dist dist-esm && tsc -p tsconfig.json && tsc -p tsconfig-esm.json && node -e \"const fs=require('fs'),p=require('path');function r(d){fs.readdirSync(d).forEach(f=>{const s=p.join(d,f);fs.statSync(s).isDirectory()?r(s):f.endsWith('.js')&&fs.renameSync(s,s.replace(/\\.js$/,'.mjs'))})};r('dist-esm')\" && cp -r dist-esm/* dist/ && rm -rf dist-esm",
+    "generate": "ts-node scripts/generate-bundled-data.ts",
+    "build": "npm run generate && rimraf dist dist-esm && tsc -p tsconfig.json && tsc -p tsconfig-esm.json && node -e \"const fs=require('fs'),p=require('path');function r(d){fs.readdirSync(d).forEach(f=>{const s=p.join(d,f);fs.statSync(s).isDirectory()?r(s):f.endsWith('.js')&&fs.renameSync(s,s.replace(/\\.js$/,'.mjs'))})};r('dist-esm')\" && cp -r dist-esm/* dist/ && rm -rf dist-esm",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "prepublishOnly": "npm run lint && npm run test && npm run build && npm run update-blocklist",
     "test": "jest --config ./test/jest-e2e.json",
@@ -48,12 +52,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/floracodex/disposable-email-checker.git"
+    "url": "git+https://github.com/quargtools/burnerguard.git"
   },
   "bugs": {
-    "url": "https://github.com/floracodex/disposable-email-checker/issues"
+    "url": "https://github.com/quargtools/burnerguard/issues"
   },
-  "homepage": "https://github.com/floracodex/disposable-email-checker#readme",
+  "homepage": "https://github.com/quargtools/burnerguard#readme",
   "jest": {
     "moduleFileExtensions": [
       "js",

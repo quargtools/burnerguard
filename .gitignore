@@ -3,6 +3,9 @@
 /node_modules
 /build
 
+# auto-generated bundled data
+/src/bundled-data.ts
+
 # Logs
 logs
 *.log

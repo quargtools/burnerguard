@@ -1,10 +1,13 @@
-export {EmailChecker} from './client';
+export {BurnerGuard} from './client';
 export type {
-    CheckResult,
+    BurnerGuardOptions,
     DataDomainListSource,
     DomainListSource,
-    EmailCheckerOptions,
+    EnrichedVerifyResult,
     FileDomainListSource,
     FilterResult,
-    UrlDomainListSource
+    RiskSignals,
+    UrlDomainListSource,
+    VerifyOptions,
+    VerifyResult
 } from './interfaces';

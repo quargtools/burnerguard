@@ -1,13 +1,13 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import {EmailChecker, type EmailCheckerOptions} from '../src';
+import {BurnerGuard, type BurnerGuardOptions} from '../src';
 
 const TEST_LOCAL_BLOCKLIST_PATH = path.join(__dirname, 'BLOCKLIST');
 const TEST_LOCAL_ALLOWLIST_PATH = path.join(__dirname, 'ALLOWLIST');
 const GITHUB_RAW_URL = 'https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/disposable_email_blocklist.conf';
 
-describe('EmailChecker', () => {
+describe('BurnerGuard', () => {
 
     beforeAll(async () => {
         const blocklistContent = [
@@ -36,261 +36,273 @@ describe('EmailChecker', () => {
     // --- Factory / Initialization ---
 
     it('should create an instance with default (bundled) data', async () => {
-        const checker = await EmailChecker.create();
-        expect(checker).toBeInstanceOf(EmailChecker);
-        expect(checker.blocklistSize).toBeGreaterThan(0);
+        const guard = await BurnerGuard.create();
+        expect(guard).toBeInstanceOf(BurnerGuard);
+        expect(guard.blocklistSize).toBeGreaterThan(0);
     });
 
     it('should create an instance from a local file path (block list)', async () => {
-        const checker = await EmailChecker.create({
+        const guard = await BurnerGuard.create({
             sources: [{type: 'block', filePath: TEST_LOCAL_BLOCKLIST_PATH}]
         });
-        expect(checker).toBeInstanceOf(EmailChecker);
-        expect(checker.isDisposable('user@testmail.org')).toBe(true);
-        expect(checker.isDisposable('user@nonexistent.info')).toBe(false);
+        expect(guard).toBeInstanceOf(BurnerGuard);
+        const result = await guard.verify('user@testmail.org');
+        expect(result.isMatch).toBe(true);
+        const result2 = await guard.verify('user@nonexistent.info');
+        expect(result2.isMatch).toBe(false);
     });
 
     it('should create an instance from a local file with allowlist', async () => {
-        const checker = await EmailChecker.create({
+        const guard = await BurnerGuard.create({
             sources: [
                 {type: 'block', filePath: TEST_LOCAL_BLOCKLIST_PATH},
                 {type: 'allow', filePath: TEST_LOCAL_ALLOWLIST_PATH}
             ]
         });
-        expect(checker.isDisposable('user@example.com')).toBe(false);
-        expect(checker.isDisposable('user@testmail.org')).toBe(true);
+        expect((await guard.verify('user@example.com')).isMatch).toBe(false);
+        expect((await guard.verify('user@testmail.org')).isMatch).toBe(true);
     });
 
     it('should create an instance from an inline data array', async () => {
-        const checker = await EmailChecker.create({
+        const guard = await BurnerGuard.create({
             sources: [{type: 'block', list: ['custom-spam.com', 'junk.io']}]
         });
-        expect(checker.isDisposable('user@custom-spam.com')).toBe(true);
-        expect(checker.isDisposable('user@junk.io')).toBe(true);
-        expect(checker.isDisposable('user@gmail.com')).toBe(false);
+        expect((await guard.verify('user@custom-spam.com')).isMatch).toBe(true);
+        expect((await guard.verify('user@junk.io')).isMatch).toBe(true);
+        expect((await guard.verify('user@gmail.com')).isMatch).toBe(false);
     });
 
     it('should apply additionalBlockedDomains shorthand', async () => {
-        const checker = await EmailChecker.create({
+        const guard = await BurnerGuard.create({
             additionalBlockedDomains: ['my-custom-spam.com']
         });
-        expect(checker.isDisposable('user@my-custom-spam.com')).toBe(true);
-        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
+        expect((await guard.verify('user@my-custom-spam.com')).isMatch).toBe(true);
+        expect((await guard.verify('test@yopmail.com')).isMatch).toBe(true);
     });
 
     it('should apply additionalAllowedDomains shorthand', async () => {
-        const checker = await EmailChecker.create({
+        const guard = await BurnerGuard.create({
             additionalAllowedDomains: ['yopmail.com']
         });
-        expect(checker.isDisposable('test@yopmail.com')).toBe(false);
+        expect((await guard.verify('test@yopmail.com')).isMatch).toBe(false);
     });
 
     it('should load bundled blocklist alongside custom sources when useBundledBlocklist is true', async () => {
-        const checker = await EmailChecker.create({
+        const guard = await BurnerGuard.create({
             useBundledBlocklist: true,
             sources: [{type: 'block', list: ['my-custom-spam.com']}]
         });
-        expect(checker.isDisposable('user@my-custom-spam.com')).toBe(true);
-        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
+        expect((await guard.verify('user@my-custom-spam.com')).isMatch).toBe(true);
+        expect((await guard.verify('test@yopmail.com')).isMatch).toBe(true);
     });
 
     it('should throw an error if a source file does not exist', async () => {
-        const options: EmailCheckerOptions = {
+        const options: BurnerGuardOptions = {
             sources: [{type: 'block', filePath: '/non/existent/path.txt'}]
         };
-        await expect(EmailChecker.create(options)).rejects.toThrow(/Failed to load/);
+        await expect(BurnerGuard.create(options)).rejects.toThrow(/Failed to load/);
     });
 
     it('should create an instance from a URL', async () => {
-        const checker = await EmailChecker.create({
+        const guard = await BurnerGuard.create({
             sources: [{type: 'block', url: GITHUB_RAW_URL}]
         });
-        expect(checker).toBeInstanceOf(EmailChecker);
-        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
+        expect(guard).toBeInstanceOf(BurnerGuard);
+        expect((await guard.verify('test@yopmail.com')).isMatch).toBe(true);
     }, 20000);
 
-    // --- isDisposable ---
+    it('should accept an apiKey option', async () => {
+        const guard = await BurnerGuard.create({apiKey: 'bg_test_abc123'});
+        expect(guard).toBeInstanceOf(BurnerGuard);
+    });
 
-    it('should identify disposable emails using bundled data', async () => {
-        const checker = await EmailChecker.create();
-        expect(checker.isDisposable('test@5mail.cf')).toBe(true);
-        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
-        expect(checker.isDisposable('test@protonmail.com')).toBe(false);
-        expect(checker.isDisposable('user@gmail.com')).toBe(false);
+    it('should accept a threshold option', async () => {
+        const guard = await BurnerGuard.create({threshold: 0.7});
+        expect(guard).toBeInstanceOf(BurnerGuard);
+    });
+
+    // --- verify ---
+
+    it('should detect matches using bundled data', async () => {
+        const guard = await BurnerGuard.create();
+        expect((await guard.verify('test@5mail.cf')).isMatch).toBe(true);
+        expect((await guard.verify('test@yopmail.com')).isMatch).toBe(true);
+        expect((await guard.verify('test@protonmail.com')).isMatch).toBe(false);
+        expect((await guard.verify('user@gmail.com')).isMatch).toBe(false);
     });
 
     it('should handle case-insensitive domain matching', async () => {
-        const checker = await EmailChecker.create();
-        expect(checker.isDisposable('test@5Mail.cf')).toBe(true);
-        expect(checker.isDisposable('TEST@YOPMAIL.COM')).toBe(true);
-        expect(checker.isDisposable('user@GmAiL.cOm')).toBe(false);
+        const guard = await BurnerGuard.create();
+        expect((await guard.verify('test@5Mail.cf')).isMatch).toBe(true);
+        expect((await guard.verify('TEST@YOPMAIL.COM')).isMatch).toBe(true);
+        expect((await guard.verify('user@GmAiL.cOm')).isMatch).toBe(false);
     });
 
     it('should accept bare domains as well as emails', async () => {
-        const checker = await EmailChecker.create();
-        expect(checker.isDisposable('yopmail.com')).toBe(true);
-        expect(checker.isDisposable('gmail.com')).toBe(false);
-        expect(checker.isDisposable('YOPMAIL.COM')).toBe(true);
+        const guard = await BurnerGuard.create();
+        expect((await guard.verify('yopmail.com')).isMatch).toBe(true);
+        expect((await guard.verify('gmail.com')).isMatch).toBe(false);
+        expect((await guard.verify('YOPMAIL.COM')).isMatch).toBe(true);
     });
 
-    it('should return false for invalid or empty input', async () => {
-        const checker = await EmailChecker.create();
-        expect(checker.isDisposable('invalid-email')).toBe(false);
-        expect(checker.isDisposable('')).toBe(false);
+    it('should return isMatch false for invalid or empty input', async () => {
+        const guard = await BurnerGuard.create();
+        expect((await guard.verify('invalid-email')).isMatch).toBe(false);
+        expect((await guard.verify('')).isMatch).toBe(false);
     });
 
-    // --- check (detailed) ---
-
-    it('should return detailed result for a disposable email', async () => {
-        const checker = await EmailChecker.create();
-        const result = checker.check('user@yopmail.com');
-        expect(result.isDisposable).toBe(true);
-        expect(result.domain).toBe('yopmail.com');
-        expect(result.matchedRule).toBe('yopmail.com');
-        expect(result.isAllowlisted).toBe(false);
+    it('should return matchedOn "blocklist" for static matches', async () => {
+        const guard = await BurnerGuard.create();
+        const result = await guard.verify('user@yopmail.com');
+        expect(result.isMatch).toBe(true);
+        expect(result.matchedOn).toBe('blocklist');
     });
 
-    it('should return detailed result for a clean email', async () => {
-        const checker = await EmailChecker.create();
-        const result = checker.check('user@gmail.com');
-        expect(result.isDisposable).toBe(false);
-        expect(result.domain).toBe('gmail.com');
-        expect(result.matchedRule).toBeNull();
-        expect(result.isAllowlisted).toBe(false);
+    it('should return null matchedOn for non-matches', async () => {
+        const guard = await BurnerGuard.create();
+        const result = await guard.verify('user@gmail.com');
+        expect(result.isMatch).toBe(false);
+        expect(result.matchedOn).toBeNull();
     });
 
     it('should return detailed result for an allowlisted domain', async () => {
-        const checker = await EmailChecker.create({
+        const guard = await BurnerGuard.create({
             additionalAllowedDomains: ['yopmail.com']
         });
-        const result = checker.check('user@yopmail.com');
-        expect(result.isDisposable).toBe(false);
+        const result = await guard.verify('user@yopmail.com');
+        expect(result.isMatch).toBe(false);
         expect(result.domain).toBe('yopmail.com');
-        expect(result.matchedRule).toBeNull();
+        expect(result.matchedOn).toBeNull();
         expect(result.isAllowlisted).toBe(true);
     });
 
-    it('should return detailed result showing matched rule for subdomains', async () => {
-        const checker = await EmailChecker.create({
-            sources: [{type: 'block', list: ['spammy.com']}]
-        });
-        const result = checker.check('user@mail.spammy.com');
-        expect(result.isDisposable).toBe(true);
-        expect(result.domain).toBe('mail.spammy.com');
-        expect(result.matchedRule).toBe('spammy.com');
+    it('should return null domain for invalid input', async () => {
+        const guard = await BurnerGuard.create();
+        const result = await guard.verify('');
+        expect(result.isMatch).toBe(false);
+        expect(result.domain).toBeNull();
     });
 
-    it('should return null domain for invalid input', async () => {
-        const checker = await EmailChecker.create();
-        const result = checker.check('');
-        expect(result.isDisposable).toBe(false);
-        expect(result.domain).toBeNull();
+    it('should throw when apiKey is set (service mode not yet available)', async () => {
+        const guard = await BurnerGuard.create({apiKey: 'bg_test_abc123'});
+        await expect(guard.verify('test@yopmail.com')).rejects.toThrow(/service mode is not yet available/);
+    });
+
+    // --- verifyBatch ---
+
+    it('should verify multiple emails in a batch', async () => {
+        const guard = await BurnerGuard.create();
+        const results = await guard.verifyBatch(['user@gmail.com', 'test@yopmail.com', 'foo@outlook.com']);
+        expect(results).toHaveLength(3);
+        expect(results[0].isMatch).toBe(false);
+        expect(results[1].isMatch).toBe(true);
+        expect(results[2].isMatch).toBe(false);
     });
 
     // --- filter ---
 
-    it('should split emails into disposable and clean', async () => {
-        const checker = await EmailChecker.create();
+    it('should split emails into matched and clean', async () => {
+        const guard = await BurnerGuard.create();
         const emails = ['user@gmail.com', 'test@5mail.cf', 'foo@yopmail.com'];
-        const result = checker.filter(emails);
-        expect(result.disposable).toEqual(['test@5mail.cf', 'foo@yopmail.com']);
+        const result = await guard.filter(emails);
+        expect(result.matched).toEqual(['test@5mail.cf', 'foo@yopmail.com']);
         expect(result.clean).toEqual(['user@gmail.com']);
     });
 
     it('should return empty arrays for empty input', async () => {
-        const checker = await EmailChecker.create();
-        const result = checker.filter([]);
-        expect(result.disposable).toEqual([]);
+        const guard = await BurnerGuard.create();
+        const result = await guard.filter([]);
+        expect(result.matched).toEqual([]);
         expect(result.clean).toEqual([]);
     });
 
-    // --- hasDisposable ---
+    // --- hasMatch ---
 
-    it('should return true if any email is disposable', async () => {
-        const checker = await EmailChecker.create();
-        expect(checker.hasDisposable(['user@gmail.com', 'test@5mail.cf'])).toBe(true);
-        expect(checker.hasDisposable(['user@gmail.com', 'user@outlook.com'])).toBe(false);
+    it('should return true if any email is a match', async () => {
+        const guard = await BurnerGuard.create();
+        expect(await guard.hasMatch(['user@gmail.com', 'test@5mail.cf'])).toBe(true);
+        expect(await guard.hasMatch(['user@gmail.com', 'user@outlook.com'])).toBe(false);
     });
 
     // --- block / allow ---
 
     it('should block a domain at runtime', async () => {
-        const checker = await EmailChecker.create();
-        expect(checker.isDisposable('test@my-new-spam.com')).toBe(false);
-        checker.block('my-new-spam.com');
-        expect(checker.isDisposable('test@my-new-spam.com')).toBe(true);
+        const guard = await BurnerGuard.create();
+        expect((await guard.verify('test@my-new-spam.com')).isMatch).toBe(false);
+        await guard.block('my-new-spam.com');
+        expect((await guard.verify('test@my-new-spam.com')).isMatch).toBe(true);
     });
 
     it('should allow a domain at runtime, overriding the blocklist', async () => {
-        const checker = await EmailChecker.create();
-        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
-        checker.allow('yopmail.com');
-        expect(checker.isDisposable('test@yopmail.com')).toBe(false);
+        const guard = await BurnerGuard.create();
+        expect((await guard.verify('test@yopmail.com')).isMatch).toBe(true);
+        await guard.allow('yopmail.com');
+        expect((await guard.verify('test@yopmail.com')).isMatch).toBe(false);
     });
 
     it('should ignore empty strings when blocking or allowing', async () => {
-        const checker = await EmailChecker.create();
-        const sizeBefore = checker.blocklistSize;
-        checker.block('');
-        checker.block('   ');
-        expect(checker.blocklistSize).toBe(sizeBefore);
+        const guard = await BurnerGuard.create();
+        const sizeBefore = guard.blocklistSize;
+        await guard.block('');
+        await guard.block('   ');
+        expect(guard.blocklistSize).toBe(sizeBefore);
     });
 
     // --- Subdomain matching ---
 
     it('should detect subdomains of blocked domains', async () => {
-        const checker = await EmailChecker.create({
+        const guard = await BurnerGuard.create({
             sources: [{type: 'block', list: ['spammy.com']}]
         });
-        expect(checker.isDisposable('user@spammy.com')).toBe(true);
-        expect(checker.isDisposable('user@mail.spammy.com')).toBe(true);
-        expect(checker.isDisposable('user@sub.mail.spammy.com')).toBe(true);
-        expect(checker.isDisposable('user@notspammy.com')).toBe(false);
+        expect((await guard.verify('user@spammy.com')).isMatch).toBe(true);
+        expect((await guard.verify('user@mail.spammy.com')).isMatch).toBe(true);
+        expect((await guard.verify('user@sub.mail.spammy.com')).isMatch).toBe(true);
+        expect((await guard.verify('user@notspammy.com')).isMatch).toBe(false);
     });
 
     it('should detect subdomains with bare domain input', async () => {
-        const checker = await EmailChecker.create({
+        const guard = await BurnerGuard.create({
             sources: [{type: 'block', list: ['spammy.com']}]
         });
-        expect(checker.isDisposable('spammy.com')).toBe(true);
-        expect(checker.isDisposable('mail.spammy.com')).toBe(true);
-        expect(checker.isDisposable('deep.sub.spammy.com')).toBe(true);
+        expect((await guard.verify('spammy.com')).isMatch).toBe(true);
+        expect((await guard.verify('mail.spammy.com')).isMatch).toBe(true);
+        expect((await guard.verify('deep.sub.spammy.com')).isMatch).toBe(true);
     });
 
     it('should respect allowlist when checking subdomains', async () => {
-        const checker = await EmailChecker.create({
+        const guard = await BurnerGuard.create({
             sources: [
                 {type: 'block', list: ['spammy.com']},
                 {type: 'allow', list: ['legit.spammy.com']}
             ]
         });
-        expect(checker.isDisposable('user@spammy.com')).toBe(true);
-        expect(checker.isDisposable('user@legit.spammy.com')).toBe(false);
-        expect(checker.isDisposable('user@other.spammy.com')).toBe(true);
+        expect((await guard.verify('user@spammy.com')).isMatch).toBe(true);
+        expect((await guard.verify('user@legit.spammy.com')).isMatch).toBe(false);
+        expect((await guard.verify('user@other.spammy.com')).isMatch).toBe(true);
     });
 
     // --- Utilities ---
 
     it('should extract domain from email', async () => {
-        const checker = await EmailChecker.create();
-        expect(checker.extractDomain('user@gmail.com')).toBe('gmail.com');
-        expect(checker.extractDomain('USER@GMAIL.COM')).toBe('gmail.com');
-        expect(checker.extractDomain('invalid')).toBeNull();
+        const guard = await BurnerGuard.create();
+        expect(guard.extractDomain('user@gmail.com')).toBe('gmail.com');
+        expect(guard.extractDomain('USER@GMAIL.COM')).toBe('gmail.com');
+        expect(guard.extractDomain('invalid')).toBeNull();
     });
 
     it('should validate email syntax', async () => {
-        const checker = await EmailChecker.create();
-        expect(checker.isValidEmail('user@example.com')).toBe(true);
-        expect(checker.isValidEmail('user@domain.co.uk')).toBe(true);
-        expect(checker.isValidEmail('invalid')).toBe(false);
-        expect(checker.isValidEmail('')).toBe(false);
+        const guard = await BurnerGuard.create();
+        expect(guard.isValidEmail('user@example.com')).toBe(true);
+        expect(guard.isValidEmail('user@domain.co.uk')).toBe(true);
+        expect(guard.isValidEmail('invalid')).toBe(false);
+        expect(guard.isValidEmail('')).toBe(false);
     });
 
     // --- Properties ---
 
     it('should expose blocklistSize and allowlistSize', async () => {
-        const checker = await EmailChecker.create({useBundledAllowlist: true});
-        expect(checker.blocklistSize).toBeGreaterThan(1000);
-        expect(checker.allowlistSize).toBeGreaterThan(0);
+        const guard = await BurnerGuard.create({useBundledAllowlist: true});
+        expect(guard.blocklistSize).toBeGreaterThan(1000);
+        expect(guard.allowlistSize).toBeGreaterThan(0);
     });
 });
