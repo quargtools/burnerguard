@@ -1,7 +1,11 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import type {ListOptions} from './interfaces';
+interface ListOptions {
+    url: string;
+    outputPath: string;
+    listName: string;
+}
 
 export class DomainListService {
     /**

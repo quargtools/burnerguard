@@ -1,39 +1,49 @@
 import * as path from 'node:path';
 
-import type {DisposableEmailCheckerOptions, DomainListSource} from './interfaces';
+import type {CheckResult, DomainListSource, EmailCheckerOptions, FilterResult} from './interfaces';
 import {DomainListService} from './services';
 
 const EMAIL_REGEXP = /^(?=.{1,254}$)(?=.{1,64}@)[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)$/;
 
-export class DisposableEmailChecker {
+export class EmailChecker {
     private static readonly BUNDLED_BLOCKLIST_PATH = path.resolve(__dirname, '..', 'data', 'BLOCKLIST');
     private static readonly BUNDLED_ALLOWLIST_PATH = path.resolve(__dirname, '..', 'data', 'ALLOWLIST');
 
     private constructor(
-        private disposableDomains: Set<string>,
+        private blockedDomains: Set<string>,
         private allowedDomains: Set<string>
     ) {}
 
+    /** Number of domains in the blocklist. */
+    get blocklistSize(): number {
+        return this.blockedDomains.size;
+    }
+
+    /** Number of domains in the allowlist. */
+    get allowlistSize(): number {
+        return this.allowedDomains.size;
+    }
+
     /**
-     * Asynchronously creates and initializes a DisposableEmailChecker instance.
+     * Creates and initializes an EmailChecker instance.
      * @param options - Configuration for loading domain lists.
-     * @returns A fully initialized DisposableEmailChecker instance.
+     * @returns A fully initialized EmailChecker instance.
      */
-    static async create(options?: DisposableEmailCheckerOptions): Promise<DisposableEmailChecker> {
-        const disposableDomains = new Set<string>();
+    static async create(options?: EmailCheckerOptions): Promise<EmailChecker> {
+        const blockedDomains = new Set<string>();
         const allowedDomains = new Set<string>();
 
-        const hasCustomLists = options?.domainLists !== undefined && options.domainLists.length > 0;
+        const hasCustomSources = options?.sources !== undefined && options.sources.length > 0;
 
-        const shouldLoadBundledBlocklist = options?.useBundledBlocklist ?? !hasCustomLists;
+        const shouldLoadBundledBlocklist = options?.useBundledBlocklist ?? !hasCustomSources;
         if (shouldLoadBundledBlocklist) {
             try {
                 const content = await DomainListService.loadFile(this.BUNDLED_BLOCKLIST_PATH, 'bundled blocklist');
                 for (const domain of DomainListService.processDomainList(content)) {
-                    disposableDomains.add(domain);
+                    blockedDomains.add(domain);
                 }
             } catch (error) {
-                if (!hasCustomLists) {
+                if (!hasCustomSources) {
                     throw error;
                 }
             }
@@ -50,141 +60,196 @@ export class DisposableEmailChecker {
             }
         }
 
-        if (hasCustomLists) {
-            for (const source of options.domainLists!) {
+        if (hasCustomSources) {
+            for (const source of options.sources!) {
                 const domains = await this.loadDomainListSource(source);
-                const targetSet = source.type === 'allow' ? allowedDomains : disposableDomains;
+                const targetSet = source.type === 'allow' ? allowedDomains : blockedDomains;
                 for (const domain of domains) {
                     targetSet.add(domain);
                 }
             }
         }
 
-        return new DisposableEmailChecker(disposableDomains, allowedDomains);
-    }
-
-    /**
-     * Adds a domain to the allowlist, overriding the blocklist for this instance.
-     * @param domain - The domain to allow (e.g., "mycompany.com").
-     */
-    addAllowedDomain(domain: string): void {
-        domain = domain.trim();
-        if (domain === '') {
-            return;
+        if (options?.additionalBlockedDomains) {
+            for (const domain of options.additionalBlockedDomains) {
+                const trimmed = domain.trim().toLowerCase();
+                if (trimmed !== '') {
+                    blockedDomains.add(trimmed);
+                }
+            }
         }
-        this.allowedDomains.add(domain.toLowerCase());
+
+        if (options?.additionalAllowedDomains) {
+            for (const domain of options.additionalAllowedDomains) {
+                const trimmed = domain.trim().toLowerCase();
+                if (trimmed !== '') {
+                    allowedDomains.add(trimmed);
+                }
+            }
+        }
+
+        return new EmailChecker(blockedDomains, allowedDomains);
     }
 
     /**
      * Adds a domain to the blocklist for this instance.
      * @param domain - The domain to block (e.g., "sketchy-domain.io").
      */
-    addDisposableDomain(domain: string): void {
-        domain = domain.trim();
-        if (domain === '') {
+    block(domain: string): void {
+        const trimmed = domain.trim();
+        if (trimmed === '') {
             return;
         }
-        this.disposableDomains.add(domain.toLowerCase());
+        this.blockedDomains.add(trimmed.toLowerCase());
     }
 
     /**
-     * Checks multiple email addresses against the blocklist.
-     * @returns A parallel array of booleans indicating disposability.
+     * Adds a domain to the allowlist, overriding the blocklist for this instance.
+     * @param domain - The domain to allow (e.g., "mycompany.com").
      */
-    checkEmails(emails: string[]): boolean[] {
-        return emails.map((email) => this.isDisposable(email));
+    allow(domain: string): void {
+        const trimmed = domain.trim();
+        if (trimmed === '') {
+            return;
+        }
+        this.allowedDomains.add(trimmed.toLowerCase());
+    }
+
+    /**
+     * Checks if an email address or bare domain is disposable.
+     * Accepts either `"user@yopmail.com"` or `"yopmail.com"`.
+     * Walks up the domain hierarchy to catch subdomains of blocked domains.
+     */
+    isDisposable(emailOrDomain: string): boolean {
+        const domain = this.resolveDomain(emailOrDomain);
+        if (!domain) {
+            return false;
+        }
+        return this.findBlockedAncestor(domain) !== null;
+    }
+
+    /**
+     * Returns a detailed result for a single email or domain check.
+     * Useful for logging, debugging, or building UIs.
+     */
+    check(emailOrDomain: string): CheckResult {
+        const domain = this.resolveDomain(emailOrDomain);
+        if (!domain) {
+            return {isDisposable: false, domain: null, matchedRule: null, isAllowlisted: false};
+        }
+
+        const allowlistMatch = this.findAllowedAncestor(domain);
+        if (allowlistMatch !== null) {
+            return {isDisposable: false, domain, matchedRule: null, isAllowlisted: true};
+        }
+
+        const blockedMatch = this.findBlockedAncestor(domain);
+        if (blockedMatch !== null) {
+            return {isDisposable: true, domain, matchedRule: blockedMatch, isAllowlisted: false};
+        }
+
+        return {isDisposable: false, domain, matchedRule: null, isAllowlisted: false};
+    }
+
+    /**
+     * Splits emails into disposable and clean buckets.
+     */
+    filter(emails: string[]): FilterResult {
+        const disposable: string[] = [];
+        const clean: string[] = [];
+
+        for (const email of emails) {
+            if (this.isDisposable(email)) {
+                disposable.push(email);
+            } else {
+                clean.push(email);
+            }
+        }
+
+        return {disposable, clean};
     }
 
     /**
      * Returns true if at least one email in the list is disposable.
      */
-    containsDisposable(emails: string[]): boolean {
+    hasDisposable(emails: string[]): boolean {
         return emails.some((email) => this.isDisposable(email));
-    }
-
-    /** Returns the number of domains in the blocklist. */
-    getDisposableDomainCount(): number {
-        return this.disposableDomains.size;
-    }
-
-    /** Returns only the disposable email addresses from a list. */
-    getDisposableEmails(emails: string[]): string[] {
-        if (!Array.isArray(emails)) {
-            return [];
-        }
-        return emails.filter((email) => this.isDisposable(email));
     }
 
     /**
      * Extracts the domain from an email address.
-     * @returns The lowercase domain, or null if the email is invalid.
+     * @returns The lowercase domain, or null if the input is not a valid email.
      */
-    getDomainFromEmail(email: string): string | null {
+    extractDomain(email: string): string | null {
         const match = EMAIL_REGEXP.exec(email);
         return match ? match[1].toLowerCase() : null;
     }
 
-    /** Returns only the non-disposable email addresses from a list. */
-    getNonDisposableEmails(emails: string[]): string[] {
-        if (!Array.isArray(emails)) {
-            return [];
-        }
-        return emails.filter((email) => !this.isDisposable(email));
-    }
-
-    /**
-     * Checks if an email address's domain is disposable.
-     * Walks up the domain hierarchy to catch subdomains of blocked domains.
-     */
-    isDisposable(email: string): boolean {
-        const domain = this.getDomainFromEmail(email);
-        if (!domain) {
-            return false;
-        }
-        return this.isDomainBlocked(domain);
-    }
-
-    /**
-     * Checks if a domain is disposable.
-     * Walks up the domain hierarchy to catch subdomains of blocked domains.
-     */
-    isDomainDisposable(domain: string): boolean {
-        if (!domain || domain.trim() === '') {
-            return false;
-        }
-        return this.isDomainBlocked(domain.toLowerCase());
-    }
-
     /** Validates whether a string conforms to standard email syntax. */
-    isValidEmailSyntax(email: string): boolean {
+    isValidEmail(email: string): boolean {
         return EMAIL_REGEXP.test(email);
     }
 
     // region Private
 
     /**
-     * Checks a domain against the allowlist and blocklist, walking up the
-     * domain hierarchy. For example, if "example.com" is blocked,
-     * "mail.example.com" will also be detected as disposable.
-     *
-     * The allowlist is checked at each level and takes priority.
+     * Resolves the input to a bare domain. If the input contains `@`, it is
+     * treated as an email and the domain is extracted. Otherwise it is treated
+     * as a bare domain.
      */
-    private isDomainBlocked(domain: string): boolean {
+    private resolveDomain(emailOrDomain: string): string | null {
+        if (!emailOrDomain || emailOrDomain.trim() === '') {
+            return null;
+        }
+
+        if (emailOrDomain.includes('@')) {
+            return this.extractDomain(emailOrDomain);
+        }
+
+        return emailOrDomain.trim().toLowerCase();
+    }
+
+    /**
+     * Walks up the domain hierarchy looking for a blocklist match.
+     * Returns the matching rule (e.g., "yopmail.com") or null.
+     *
+     * The allowlist is checked at each level and takes priority — if an
+     * ancestor is allowlisted, the walk stops and returns null.
+     */
+    private findBlockedAncestor(domain: string): string | null {
         const parts = domain.split('.');
 
         for (let i = 0; i < parts.length - 1; i++) {
             const candidate = parts.slice(i).join('.');
 
             if (this.allowedDomains.has(candidate)) {
-                return false;
+                return null;
             }
 
-            if (this.disposableDomains.has(candidate)) {
-                return true;
+            if (this.blockedDomains.has(candidate)) {
+                return candidate;
             }
         }
 
-        return false;
+        return null;
+    }
+
+    /**
+     * Walks up the domain hierarchy looking for an allowlist match.
+     * Returns the matching domain or null.
+     */
+    private findAllowedAncestor(domain: string): string | null {
+        const parts = domain.split('.');
+
+        for (let i = 0; i < parts.length - 1; i++) {
+            const candidate = parts.slice(i).join('.');
+
+            if (this.allowedDomains.has(candidate)) {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private static async loadDomainListSource(source: DomainListSource): Promise<string[]> {

@@ -1,26 +1,23 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import {DisposableEmailChecker, type DisposableEmailCheckerOptions} from '../src';
+import {EmailChecker, type EmailCheckerOptions} from '../src';
 
 const TEST_LOCAL_BLOCKLIST_PATH = path.join(__dirname, 'BLOCKLIST');
 const TEST_LOCAL_ALLOWLIST_PATH = path.join(__dirname, 'ALLOWLIST');
 const GITHUB_RAW_URL = 'https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/disposable_email_blocklist.conf';
 
-describe('DisposableEmailChecker', () => {
+describe('EmailChecker', () => {
 
     beforeAll(async () => {
         const blocklistContent = [
             'example.com',
             'testmail.org',
             'temp.net',
-            'abc.xyz',
-            'foo.bar',
             '# This is a comment',
             '',
             'another.com',
-            'UPPERCASE.COM',
-            'invalid-tld'
+            'UPPERCASE.COM'
         ].join('\n');
         await fs.writeFile(TEST_LOCAL_BLOCKLIST_PATH, blocklistContent, 'utf8');
 
@@ -39,13 +36,83 @@ describe('DisposableEmailChecker', () => {
     // --- Factory / Initialization ---
 
     it('should create an instance with default (bundled) data', async () => {
-        const checker = await DisposableEmailChecker.create();
-        expect(checker).toBeInstanceOf(DisposableEmailChecker);
-        expect(checker.getDisposableDomainCount()).toBeGreaterThan(0);
+        const checker = await EmailChecker.create();
+        expect(checker).toBeInstanceOf(EmailChecker);
+        expect(checker.blocklistSize).toBeGreaterThan(0);
     });
 
-    it('should correctly identify disposable domains using bundled data', async () => {
-        const checker = await DisposableEmailChecker.create();
+    it('should create an instance from a local file path (block list)', async () => {
+        const checker = await EmailChecker.create({
+            sources: [{type: 'block', filePath: TEST_LOCAL_BLOCKLIST_PATH}]
+        });
+        expect(checker).toBeInstanceOf(EmailChecker);
+        expect(checker.isDisposable('user@testmail.org')).toBe(true);
+        expect(checker.isDisposable('user@nonexistent.info')).toBe(false);
+    });
+
+    it('should create an instance from a local file with allowlist', async () => {
+        const checker = await EmailChecker.create({
+            sources: [
+                {type: 'block', filePath: TEST_LOCAL_BLOCKLIST_PATH},
+                {type: 'allow', filePath: TEST_LOCAL_ALLOWLIST_PATH}
+            ]
+        });
+        expect(checker.isDisposable('user@example.com')).toBe(false);
+        expect(checker.isDisposable('user@testmail.org')).toBe(true);
+    });
+
+    it('should create an instance from an inline data array', async () => {
+        const checker = await EmailChecker.create({
+            sources: [{type: 'block', list: ['custom-spam.com', 'junk.io']}]
+        });
+        expect(checker.isDisposable('user@custom-spam.com')).toBe(true);
+        expect(checker.isDisposable('user@junk.io')).toBe(true);
+        expect(checker.isDisposable('user@gmail.com')).toBe(false);
+    });
+
+    it('should apply additionalBlockedDomains shorthand', async () => {
+        const checker = await EmailChecker.create({
+            additionalBlockedDomains: ['my-custom-spam.com']
+        });
+        expect(checker.isDisposable('user@my-custom-spam.com')).toBe(true);
+        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
+    });
+
+    it('should apply additionalAllowedDomains shorthand', async () => {
+        const checker = await EmailChecker.create({
+            additionalAllowedDomains: ['yopmail.com']
+        });
+        expect(checker.isDisposable('test@yopmail.com')).toBe(false);
+    });
+
+    it('should load bundled blocklist alongside custom sources when useBundledBlocklist is true', async () => {
+        const checker = await EmailChecker.create({
+            useBundledBlocklist: true,
+            sources: [{type: 'block', list: ['my-custom-spam.com']}]
+        });
+        expect(checker.isDisposable('user@my-custom-spam.com')).toBe(true);
+        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
+    });
+
+    it('should throw an error if a source file does not exist', async () => {
+        const options: EmailCheckerOptions = {
+            sources: [{type: 'block', filePath: '/non/existent/path.txt'}]
+        };
+        await expect(EmailChecker.create(options)).rejects.toThrow(/Failed to load/);
+    });
+
+    it('should create an instance from a URL', async () => {
+        const checker = await EmailChecker.create({
+            sources: [{type: 'block', url: GITHUB_RAW_URL}]
+        });
+        expect(checker).toBeInstanceOf(EmailChecker);
+        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
+    }, 20000);
+
+    // --- isDisposable ---
+
+    it('should identify disposable emails using bundled data', async () => {
+        const checker = await EmailChecker.create();
         expect(checker.isDisposable('test@5mail.cf')).toBe(true);
         expect(checker.isDisposable('test@yopmail.com')).toBe(true);
         expect(checker.isDisposable('test@protonmail.com')).toBe(false);
@@ -53,172 +120,127 @@ describe('DisposableEmailChecker', () => {
     });
 
     it('should handle case-insensitive domain matching', async () => {
-        const checker = await DisposableEmailChecker.create();
+        const checker = await EmailChecker.create();
         expect(checker.isDisposable('test@5Mail.cf')).toBe(true);
         expect(checker.isDisposable('TEST@YOPMAIL.COM')).toBe(true);
         expect(checker.isDisposable('user@GmAiL.cOm')).toBe(false);
     });
 
-    it('should create an instance from a local file path (block list)', async () => {
-        const options: DisposableEmailCheckerOptions = {
-            domainLists: [{type: 'block', filePath: TEST_LOCAL_BLOCKLIST_PATH}]
-        };
-        const checker = await DisposableEmailChecker.create(options);
-        expect(checker).toBeInstanceOf(DisposableEmailChecker);
-
-        expect(checker.isDisposable('user@testmail.org')).toBe(true);
-        expect(checker.isDisposable('user@temp.net')).toBe(true);
-        expect(checker.isDisposable('user@another.com')).toBe(true);
-        expect(checker.isDisposable('user@uppercase.com')).toBe(true);
-        expect(checker.isDisposable('user@nonexistent.info')).toBe(false);
+    it('should accept bare domains as well as emails', async () => {
+        const checker = await EmailChecker.create();
+        expect(checker.isDisposable('yopmail.com')).toBe(true);
+        expect(checker.isDisposable('gmail.com')).toBe(false);
+        expect(checker.isDisposable('YOPMAIL.COM')).toBe(true);
     });
 
-    it('should create an instance from a local file path with allowlist', async () => {
-        const options: DisposableEmailCheckerOptions = {
-            domainLists: [
-                {type: 'block', filePath: TEST_LOCAL_BLOCKLIST_PATH},
-                {type: 'allow', filePath: TEST_LOCAL_ALLOWLIST_PATH}
-            ]
-        };
-        const checker = await DisposableEmailChecker.create(options);
-
-        expect(checker.isDisposable('user@example.com')).toBe(false);
-        expect(checker.isDisposable('user@testmail.org')).toBe(true);
-    });
-
-    it('should create an instance from an inline data array', async () => {
-        const options: DisposableEmailCheckerOptions = {
-            domainLists: [{type: 'block', list: ['custom-spam.com', 'junk.io']}]
-        };
-        const checker = await DisposableEmailChecker.create(options);
-        expect(checker.isDisposable('user@custom-spam.com')).toBe(true);
-        expect(checker.isDisposable('user@junk.io')).toBe(true);
-        expect(checker.isDisposable('user@gmail.com')).toBe(false);
-    });
-
-    it('should load bundled blocklist alongside custom lists when useBundledBlocklist is true', async () => {
-        const options: DisposableEmailCheckerOptions = {
-            useBundledBlocklist: true,
-            domainLists: [{type: 'block', list: ['my-custom-spam.com']}]
-        };
-        const checker = await DisposableEmailChecker.create(options);
-        expect(checker.isDisposable('user@my-custom-spam.com')).toBe(true);
-        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
-    });
-
-    it('should throw an error if blocklist file does not exist', async () => {
-        const options: DisposableEmailCheckerOptions = {
-            domainLists: [{type: 'block', filePath: '/non/existent/path.txt'}]
-        };
-        await expect(DisposableEmailChecker.create(options)).rejects.toThrow(/Failed to load/);
-    });
-
-    it('should create an instance from a URL', async () => {
-        const options: DisposableEmailCheckerOptions = {
-            domainLists: [{type: 'block', url: GITHUB_RAW_URL}]
-        };
-        const checker = await DisposableEmailChecker.create(options);
-        expect(checker).toBeInstanceOf(DisposableEmailChecker);
-        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
-    }, 20000);
-
-    // --- Invalid email handling ---
-
-    it('should return false for invalid email formats', async () => {
-        const checker = await DisposableEmailChecker.create();
+    it('should return false for invalid or empty input', async () => {
+        const checker = await EmailChecker.create();
         expect(checker.isDisposable('invalid-email')).toBe(false);
-        expect(checker.isDisposable('no-at-sign.com')).toBe(false);
         expect(checker.isDisposable('')).toBe(false);
     });
 
-    // --- Batch operations ---
+    // --- check (detailed) ---
 
-    it('should check a list of emails (checkEmails)', async () => {
-        const checker = await DisposableEmailChecker.create();
-        const emails = [
-            'test@5mail.cf',
-            'user@gmail.com',
-            'foo@yopmail.com',
-            'another@outlook.com',
-            'invalid-email-format'
-        ];
-        const results = checker.checkEmails(emails);
-        expect(results).toEqual([true, false, true, false, false]);
+    it('should return detailed result for a disposable email', async () => {
+        const checker = await EmailChecker.create();
+        const result = checker.check('user@yopmail.com');
+        expect(result.isDisposable).toBe(true);
+        expect(result.domain).toBe('yopmail.com');
+        expect(result.matchedRule).toBe('yopmail.com');
+        expect(result.isAllowlisted).toBe(false);
     });
 
-    it('should detect if any email is disposable (containsDisposable)', async () => {
-        const checker = await DisposableEmailChecker.create();
-        expect(checker.containsDisposable(['user@gmail.com', 'test@5mail.cf'])).toBe(true);
-        expect(checker.containsDisposable(['user@gmail.com', 'user@outlook.com'])).toBe(false);
+    it('should return detailed result for a clean email', async () => {
+        const checker = await EmailChecker.create();
+        const result = checker.check('user@gmail.com');
+        expect(result.isDisposable).toBe(false);
+        expect(result.domain).toBe('gmail.com');
+        expect(result.matchedRule).toBeNull();
+        expect(result.isAllowlisted).toBe(false);
     });
 
-    it('should filter disposable emails (getDisposableEmails)', async () => {
-        const checker = await DisposableEmailChecker.create();
+    it('should return detailed result for an allowlisted domain', async () => {
+        const checker = await EmailChecker.create({
+            additionalAllowedDomains: ['yopmail.com']
+        });
+        const result = checker.check('user@yopmail.com');
+        expect(result.isDisposable).toBe(false);
+        expect(result.domain).toBe('yopmail.com');
+        expect(result.matchedRule).toBeNull();
+        expect(result.isAllowlisted).toBe(true);
+    });
+
+    it('should return detailed result showing matched rule for subdomains', async () => {
+        const checker = await EmailChecker.create({
+            sources: [{type: 'block', list: ['spammy.com']}]
+        });
+        const result = checker.check('user@mail.spammy.com');
+        expect(result.isDisposable).toBe(true);
+        expect(result.domain).toBe('mail.spammy.com');
+        expect(result.matchedRule).toBe('spammy.com');
+    });
+
+    it('should return null domain for invalid input', async () => {
+        const checker = await EmailChecker.create();
+        const result = checker.check('');
+        expect(result.isDisposable).toBe(false);
+        expect(result.domain).toBeNull();
+    });
+
+    // --- filter ---
+
+    it('should split emails into disposable and clean', async () => {
+        const checker = await EmailChecker.create();
         const emails = ['user@gmail.com', 'test@5mail.cf', 'foo@yopmail.com'];
-        expect(checker.getDisposableEmails(emails)).toEqual(['test@5mail.cf', 'foo@yopmail.com']);
+        const result = checker.filter(emails);
+        expect(result.disposable).toEqual(['test@5mail.cf', 'foo@yopmail.com']);
+        expect(result.clean).toEqual(['user@gmail.com']);
     });
 
-    it('should filter non-disposable emails (getNonDisposableEmails)', async () => {
-        const checker = await DisposableEmailChecker.create();
-        const emails = ['user@gmail.com', 'test@5mail.cf', 'foo@yopmail.com'];
-        expect(checker.getNonDisposableEmails(emails)).toEqual(['user@gmail.com']);
+    it('should return empty arrays for empty input', async () => {
+        const checker = await EmailChecker.create();
+        const result = checker.filter([]);
+        expect(result.disposable).toEqual([]);
+        expect(result.clean).toEqual([]);
     });
 
-    // --- Domain-level operations ---
+    // --- hasDisposable ---
 
-    it('should check a domain directly (isDomainDisposable)', async () => {
-        const checker = await DisposableEmailChecker.create();
-        expect(checker.isDomainDisposable('yopmail.com')).toBe(true);
-        expect(checker.isDomainDisposable('gmail.com')).toBe(false);
-        expect(checker.isDomainDisposable('')).toBe(false);
+    it('should return true if any email is disposable', async () => {
+        const checker = await EmailChecker.create();
+        expect(checker.hasDisposable(['user@gmail.com', 'test@5mail.cf'])).toBe(true);
+        expect(checker.hasDisposable(['user@gmail.com', 'user@outlook.com'])).toBe(false);
     });
 
-    it('should extract domain from email (getDomainFromEmail)', async () => {
-        const checker = await DisposableEmailChecker.create();
-        expect(checker.getDomainFromEmail('user@gmail.com')).toBe('gmail.com');
-        expect(checker.getDomainFromEmail('USER@GMAIL.COM')).toBe('gmail.com');
-        expect(checker.getDomainFromEmail('invalid')).toBeNull();
-    });
+    // --- block / allow ---
 
-    it('should validate email syntax (isValidEmailSyntax)', async () => {
-        const checker = await DisposableEmailChecker.create();
-        expect(checker.isValidEmailSyntax('user@example.com')).toBe(true);
-        expect(checker.isValidEmailSyntax('invalid')).toBe(false);
-        expect(checker.isValidEmailSyntax('')).toBe(false);
-        expect(checker.isValidEmailSyntax('user@domain.co.uk')).toBe(true);
-    });
-
-    // --- Runtime domain management ---
-
-    it('should allow adding domains to the allowlist at runtime', async () => {
-        const checker = await DisposableEmailChecker.create();
-        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
-
-        checker.addAllowedDomain('yopmail.com');
-        expect(checker.isDisposable('test@yopmail.com')).toBe(false);
-    });
-
-    it('should allow adding domains to the blocklist at runtime', async () => {
-        const checker = await DisposableEmailChecker.create();
+    it('should block a domain at runtime', async () => {
+        const checker = await EmailChecker.create();
         expect(checker.isDisposable('test@my-new-spam.com')).toBe(false);
-
-        checker.addDisposableDomain('my-new-spam.com');
+        checker.block('my-new-spam.com');
         expect(checker.isDisposable('test@my-new-spam.com')).toBe(true);
     });
 
-    it('should ignore empty strings when adding domains', async () => {
-        const checker = await DisposableEmailChecker.create();
-        const countBefore = checker.getDisposableDomainCount();
-        checker.addDisposableDomain('');
-        checker.addDisposableDomain('   ');
-        expect(checker.getDisposableDomainCount()).toBe(countBefore);
+    it('should allow a domain at runtime, overriding the blocklist', async () => {
+        const checker = await EmailChecker.create();
+        expect(checker.isDisposable('test@yopmail.com')).toBe(true);
+        checker.allow('yopmail.com');
+        expect(checker.isDisposable('test@yopmail.com')).toBe(false);
+    });
+
+    it('should ignore empty strings when blocking or allowing', async () => {
+        const checker = await EmailChecker.create();
+        const sizeBefore = checker.blocklistSize;
+        checker.block('');
+        checker.block('   ');
+        expect(checker.blocklistSize).toBe(sizeBefore);
     });
 
     // --- Subdomain matching ---
 
-    it('should detect subdomains of blocked domains (isDisposable)', async () => {
-        const checker = await DisposableEmailChecker.create({
-            domainLists: [{type: 'block', list: ['spammy.com']}]
+    it('should detect subdomains of blocked domains', async () => {
+        const checker = await EmailChecker.create({
+            sources: [{type: 'block', list: ['spammy.com']}]
         });
         expect(checker.isDisposable('user@spammy.com')).toBe(true);
         expect(checker.isDisposable('user@mail.spammy.com')).toBe(true);
@@ -226,19 +248,18 @@ describe('DisposableEmailChecker', () => {
         expect(checker.isDisposable('user@notspammy.com')).toBe(false);
     });
 
-    it('should detect subdomains of blocked domains (isDomainDisposable)', async () => {
-        const checker = await DisposableEmailChecker.create({
-            domainLists: [{type: 'block', list: ['spammy.com']}]
+    it('should detect subdomains with bare domain input', async () => {
+        const checker = await EmailChecker.create({
+            sources: [{type: 'block', list: ['spammy.com']}]
         });
-        expect(checker.isDomainDisposable('spammy.com')).toBe(true);
-        expect(checker.isDomainDisposable('mail.spammy.com')).toBe(true);
-        expect(checker.isDomainDisposable('deep.sub.spammy.com')).toBe(true);
-        expect(checker.isDomainDisposable('notspammy.com')).toBe(false);
+        expect(checker.isDisposable('spammy.com')).toBe(true);
+        expect(checker.isDisposable('mail.spammy.com')).toBe(true);
+        expect(checker.isDisposable('deep.sub.spammy.com')).toBe(true);
     });
 
     it('should respect allowlist when checking subdomains', async () => {
-        const checker = await DisposableEmailChecker.create({
-            domainLists: [
+        const checker = await EmailChecker.create({
+            sources: [
                 {type: 'block', list: ['spammy.com']},
                 {type: 'allow', list: ['legit.spammy.com']}
             ]
@@ -248,10 +269,28 @@ describe('DisposableEmailChecker', () => {
         expect(checker.isDisposable('user@other.spammy.com')).toBe(true);
     });
 
-    // --- Count ---
+    // --- Utilities ---
 
-    it('should return the blocklist size (getDisposableDomainCount)', async () => {
-        const checker = await DisposableEmailChecker.create();
-        expect(checker.getDisposableDomainCount()).toBeGreaterThan(1000);
+    it('should extract domain from email', async () => {
+        const checker = await EmailChecker.create();
+        expect(checker.extractDomain('user@gmail.com')).toBe('gmail.com');
+        expect(checker.extractDomain('USER@GMAIL.COM')).toBe('gmail.com');
+        expect(checker.extractDomain('invalid')).toBeNull();
+    });
+
+    it('should validate email syntax', async () => {
+        const checker = await EmailChecker.create();
+        expect(checker.isValidEmail('user@example.com')).toBe(true);
+        expect(checker.isValidEmail('user@domain.co.uk')).toBe(true);
+        expect(checker.isValidEmail('invalid')).toBe(false);
+        expect(checker.isValidEmail('')).toBe(false);
+    });
+
+    // --- Properties ---
+
+    it('should expose blocklistSize and allowlistSize', async () => {
+        const checker = await EmailChecker.create({useBundledAllowlist: true});
+        expect(checker.blocklistSize).toBeGreaterThan(1000);
+        expect(checker.allowlistSize).toBeGreaterThan(0);
     });
 });

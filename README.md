@@ -19,8 +19,11 @@ This library fills the gap: a fast, flexible, self-updating disposable email che
 ## Features
 
 - **O(1) lookups** — Domains are stored in a `Set` for constant-time checks. After async initialization, all operations are synchronous.
-- **Allowlist support** — Explicitly permit domains that would otherwise be flagged, preventing false positives. The allowlist takes priority over the blocklist.
-- **Batch operations** — Check multiple emails at once, filter disposable or non-disposable emails from a list, or test whether any email in a set is disposable.
+- **Subdomain detection** — If `yopmail.com` is blocked, `mail.yopmail.com` is automatically caught too. Works at any depth.
+- **Allowlist support** — Explicitly permit domains that would otherwise be flagged, preventing false positives. The allowlist takes priority over the blocklist at every level of the domain hierarchy.
+- **Flexible input** — Pass an email address or a bare domain to any check method. The library detects which one you gave it.
+- **Batch operations** — Filter a list of emails into disposable and clean buckets in a single call.
+- **Detailed results** — Get the matched blocklist rule, allowlist status, and extracted domain for logging and debugging.
 - **Flexible data loading** — Use the bundled blocklist (works offline), load from a local file, fetch from a URL, pass an inline array, or combine multiple sources.
 - **Stays current automatically** — A GitHub Actions pipeline fetches the latest upstream blocklist daily, opens a PR, runs tests, merges, bumps the version, and publishes to npm. Consumers just run `npm update`.
 - **Zero runtime dependencies** — Nothing beyond Node.js built-ins. Suitable for serverless functions, edge runtimes, and resource-constrained environments.
@@ -43,70 +46,78 @@ Create an instance with the async `create()` factory, then use synchronous metho
 ### Basic check
 
 ```typescript
-import { DisposableEmailChecker } from '@floracodex/disposable-email-checker';
+import {EmailChecker} from '@floracodex/disposable-email-checker';
 
-const checker = await DisposableEmailChecker.create();
+const checker = await EmailChecker.create();
 
-checker.isDisposable('user@gmail.com');       // false
 checker.isDisposable('user@yopmail.com');      // true
-checker.isDisposable('not-an-email');          // false (invalid format)
+checker.isDisposable('user@gmail.com');         // false
+checker.isDisposable('yopmail.com');            // true (bare domain)
+checker.isDisposable('mail.yopmail.com');       // true (subdomain)
 ```
 
-### Batch operations
+### Detailed check
 
 ```typescript
-const emails = [
-    'alice@example.com',
-    'bob@tempmail.com',
-    'carol@gmail.com',
-];
-
-checker.checkEmails(emails);           // [false, true, false]
-checker.containsDisposable(emails);    // true
-checker.getDisposableEmails(emails);   // ['bob@tempmail.com']
-checker.getNonDisposableEmails(emails); // ['alice@example.com', 'carol@gmail.com']
+const result = checker.check('user@sub.yopmail.com');
+// {
+//   isDisposable: true,
+//   domain: 'sub.yopmail.com',
+//   matchedRule: 'yopmail.com',
+//   isAllowlisted: false
+// }
 ```
 
-### Allowlisting domains
+### Filtering a list
 
 ```typescript
-// A domain on the blocklist that you want to permit
-checker.isDisposable('user@example.com'); // true
+const {disposable, clean} = checker.filter([
+    'alice@gmail.com',
+    'bob@yopmail.com',
+    'carol@outlook.com'
+]);
+// disposable: ['bob@yopmail.com']
+// clean: ['alice@gmail.com', 'carol@outlook.com']
 
-checker.addAllowedDomain('example.com');
-checker.isDisposable('user@example.com'); // false
+checker.hasDisposable(emails); // true if any are disposable
 ```
 
-### Adding domains at runtime
+### Blocking and allowing at runtime
 
 ```typescript
-checker.addDisposableDomain('sketchy-domain.io');
+checker.block('sketchy-domain.io');
 checker.isDisposable('user@sketchy-domain.io'); // true
+
+checker.allow('false-positive.com');
+checker.isDisposable('user@false-positive.com'); // false
 ```
 
-### Loading from a custom file
+### Adding domains at creation
 
 ```typescript
-import { DisposableEmailChecker } from '@floracodex/disposable-email-checker';
-
-const checker = await DisposableEmailChecker.create({
-    domainLists: [
-        { type: 'block', filePath: '/path/to/my-blocklist.txt' },
-        { type: 'allow', filePath: '/path/to/my-allowlist.txt' },
-    ],
+const checker = await EmailChecker.create({
+    additionalBlockedDomains: ['sketchy.com'],
+    additionalAllowedDomains: ['legit-but-flagged.com']
 });
 ```
 
-### Loading from a remote URL
+### Loading from custom sources
 
 ```typescript
-const checker = await DisposableEmailChecker.create({
-    domainLists: [
-        {
-            type: 'block',
-            url: 'https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/disposable_email_blocklist.conf',
-        },
-    ],
+const checker = await EmailChecker.create({
+    sources: [
+        {type: 'block', filePath: '/path/to/my-blocklist.txt'},
+        {type: 'allow', filePath: '/path/to/my-allowlist.txt'}
+    ]
+});
+```
+
+```typescript
+const checker = await EmailChecker.create({
+    sources: [{
+        type: 'block',
+        url: 'https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/disposable_email_blocklist.conf'
+    }]
 });
 ```
 
@@ -114,27 +125,39 @@ const checker = await DisposableEmailChecker.create({
 
 ## API Reference
 
-### Static methods
+### `EmailChecker.create(options?)`
+
+Creates a fully initialized instance. Returns `Promise<EmailChecker>`.
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `sources` | `DomainListSource[]` | — | Full-power domain list sources (file, URL, or inline array) |
+| `additionalBlockedDomains` | `string[]` | — | Shorthand: extra domains to block |
+| `additionalAllowedDomains` | `string[]` | — | Shorthand: extra domains to allow |
+| `useBundledBlocklist` | `boolean` | `true` | Load the bundled blocklist |
+| `useBundledAllowlist` | `boolean` | `false` | Load the bundled allowlist |
+
+### Methods
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `DisposableEmailChecker.create(options?)` | `Promise<DisposableEmailChecker>` | Creates a fully initialized instance |
+| `isDisposable(emailOrDomain)` | `boolean` | Check if an email or domain is disposable |
+| `check(emailOrDomain)` | `CheckResult` | Detailed check with matched rule and allowlist status |
+| `filter(emails)` | `FilterResult` | Split emails into `{disposable, clean}` |
+| `hasDisposable(emails)` | `boolean` | True if any email is disposable |
+| `block(domain)` | `void` | Add a domain to the blocklist at runtime |
+| `allow(domain)` | `void` | Add a domain to the allowlist at runtime |
+| `extractDomain(email)` | `string \| null` | Extract the domain from an email |
+| `isValidEmail(email)` | `boolean` | Validate email syntax |
 
-### Instance methods
+### Properties
 
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `isDisposable(email)` | `boolean` | Check if an email's domain is disposable |
-| `isDomainDisposable(domain)` | `boolean` | Check a domain directly |
-| `checkEmails(emails)` | `boolean[]` | Check multiple emails, returns parallel array of results |
-| `containsDisposable(emails)` | `boolean` | Returns `true` if any email is disposable |
-| `getDisposableEmails(emails)` | `string[]` | Filter to only disposable emails |
-| `getNonDisposableEmails(emails)` | `string[]` | Filter to only non-disposable emails |
-| `isValidEmailSyntax(email)` | `boolean` | Validate email format without checking disposability |
-| `getDomainFromEmail(email)` | `string \| null` | Extract the domain from an email address |
-| `addAllowedDomain(domain)` | `void` | Add a domain to the allowlist at runtime |
-| `addDisposableDomain(domain)` | `void` | Add a domain to the blocklist at runtime |
-| `getDomainDisposableDomainCount()` | `number` | Get the number of domains in the blocklist |
+| Property | Type | Description |
+|----------|------|-------------|
+| `blocklistSize` | `number` | Number of domains in the blocklist |
+| `allowlistSize` | `number` | Number of domains in the allowlist |
 
 ---
 

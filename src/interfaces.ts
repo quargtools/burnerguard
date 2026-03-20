@@ -23,15 +23,44 @@ export interface DataDomainListSource extends BaseDomainListSource {
  */
 export type DomainListSource = FileDomainListSource | UrlDomainListSource | DataDomainListSource;
 
-export interface DisposableEmailCheckerOptions {
-    domainLists?: DomainListSource[];
+export interface EmailCheckerOptions {
+    /** Full-power domain list sources (file, URL, or inline array). */
+    sources?: DomainListSource[];
+
+    /** Shorthand: additional domains to block beyond the bundled list. */
+    additionalBlockedDomains?: string[];
+
+    /** Shorthand: additional domains to allow, overriding the blocklist. */
+    additionalAllowedDomains?: string[];
+
+    /** Whether to load the bundled blocklist. Defaults to true. */
     useBundledBlocklist?: boolean;
+
+    /** Whether to load the bundled allowlist. Defaults to false. */
     useBundledAllowlist?: boolean;
 }
 
-/** Configuration for the update-blocklist script. */
-export interface ListOptions {
-    url: string;
-    outputPath: string;
-    listName: string;
+/** Detailed result from a single disposability check. */
+export interface CheckResult {
+    /** Whether the input was determined to be disposable. */
+    isDisposable: boolean;
+
+    /** The extracted domain, or null if the input was not a valid email. */
+    domain: string | null;
+
+    /** The blocklist domain that matched (e.g., "yopmail.com" when checking "sub.yopmail.com"), or null. */
+    matchedRule: string | null;
+
+    /** Whether the domain was found on the allowlist, overriding the blocklist. */
+    isAllowlisted: boolean;
 }
+
+/** Result from filtering a list of emails/domains. */
+export interface FilterResult {
+    /** Emails whose domains are on the blocklist. */
+    disposable: string[];
+
+    /** Emails whose domains are not on the blocklist (or are allowlisted). */
+    clean: string[];
+}
+
