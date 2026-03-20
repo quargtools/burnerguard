@@ -1,2 +1,2 @@
-export * from './disposable-email-checker.class';
-export * from './interfaces/disposable-email-checker-options.interface';
+export * from './client';
+export * from './interfaces';

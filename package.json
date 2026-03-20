@@ -1,5 +1,5 @@
 {
-  "name": "@floracodex/disposible-email-checker",
+  "name": "@floracodex/disposable-email-checker",
   "version": "1.0.0",
   "description": "A highly efficient library for detecting disposable (burner) email domains using the disposable-email-domains blocklist. Optimized for low-resource environments, supporting local file, URL, and bundled data sources.",
   "keywords": [
@@ -21,7 +21,15 @@
   "private": false,
   "license": "MIT",
   "main": "dist/index.js",
+  "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "files": [
     "data/**",
     "dist/**/*",
@@ -29,9 +37,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "rimraf dist && tsc -p tsconfig.json",
+    "build": "rimraf dist dist-esm && tsc -p tsconfig.json && tsc -p tsconfig-esm.json && node -e \"const fs=require('fs'),p=require('path');function r(d){fs.readdirSync(d).forEach(f=>{const s=p.join(d,f);fs.statSync(s).isDirectory()?r(s):f.endsWith('.js')&&fs.renameSync(s,s.replace(/\\.js$/,'.mjs'))})};r('dist-esm')\" && cp -r dist-esm/* dist/ && rm -rf dist-esm",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
-    "prepublishOnly": "npm run build && npm run update-blocklist",
+    "prepublishOnly": "npm run lint && npm run test && npm run build && npm run update-blocklist",
     "test": "jest --config ./test/jest-e2e.json",
     "test:watch": "jest --config ./test/jest-e2e.json --watch",
     "update-blocklist": "ts-node scripts/update-blocklist.ts",
@@ -66,6 +74,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.27.0",
+    "@stylistic/eslint-plugin": "^5.10.0",
     "@types/jest": "^29.5.12",
     "@types/node": "^22.15.2",
     "@typescript-eslint/eslint-plugin": "^8.32.1",
