@@ -31,7 +31,7 @@ export class DomainListService {
             return await fs.readFile(filePath, {encoding: 'utf8'});
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to load ${errorContext}. ${message}`);
+            throw new Error(`Failed to load ${errorContext}. ${message}`, {cause: error});
         }
     }
 
