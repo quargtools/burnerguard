@@ -33,8 +33,10 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "engines": {
+    "node": ">=20"
+  },
   "files": [
-    "data/**",
     "dist/**/*",
     "LICENSE",
     "README.md"
@@ -43,7 +45,7 @@
     "generate": "ts-node scripts/generate-bundled-data.ts",
     "build": "npm run generate && rimraf dist dist-esm && tsc -p tsconfig.json && tsc -p tsconfig-esm.json && node -e \"const fs=require('fs'),p=require('path');function r(d){fs.readdirSync(d).forEach(f=>{const s=p.join(d,f);fs.statSync(s).isDirectory()?r(s):f.endsWith('.js')&&fs.renameSync(s,s.replace(/\\.js$/,'.mjs'))})};r('dist-esm')\" && cp -r dist-esm/* dist/ && rm -rf dist-esm",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
-    "prepublishOnly": "npm run lint && npm run test && npm run build && npm run update-blocklist",
+    "prepublishOnly": "npm run lint && npm run test && npm run build",
     "test": "jest --config ./test/jest-e2e.json",
     "test:watch": "jest --config ./test/jest-e2e.json --watch",
     "update-blocklist": "ts-node scripts/update-blocklist.ts",
