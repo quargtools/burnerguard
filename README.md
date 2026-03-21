@@ -41,6 +41,10 @@ A static blocklist catches known disposable domains, but it can't detect brand-n
 
 ---
 
+## Requirements
+
+Node.js 20 or later. Works in Deno, Bun, and edge runtimes with no additional configuration.
+
 ## Installation
 
 ```bash

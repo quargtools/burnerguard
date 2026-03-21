@@ -39,6 +39,9 @@ jobs:
                         exit 1
                     fi
 
+            -   name: Verify package contents
+                run: npm pack --dry-run
+
             -   name: Publish
                 run: npm publish --provenance --access public
                 env:
