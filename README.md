@@ -2,10 +2,6 @@
 
 Stop disposable and burner email addresses from polluting your signup flow. BurnerGuard ships a curated blocklist with zero runtime dependencies, works in any JavaScript environment, and gives you a clean async API to verify emails against it.
 
-Down the road, adding an API key will upgrade the same `verify()` call to real-time risk scoring from the [BurnerGuard service](https://burnerguard.com) — but the static library is fully functional on its own.
-
-Part of the [Quarg](https://quarg.com) developer tools platform.
-
 ---
 
 ## Why this library?
@@ -20,7 +16,7 @@ BurnerGuard fills the gap: a fast, flexible, self-updating email checker that wo
 
 ### Honest limitations
 
-A static blocklist catches known disposable domains, but it can't detect brand-new throwaway domains, catch-all configurations, or suspicious registration patterns. If you need real-time detection with domain age analysis, MX provider fingerprinting, velocity signals, and risk scoring, the [BurnerGuard service](https://burnerguard.com) is on the way. The upgrade path will be seamless — add an API key and the same `verify()` call returns enriched results.
+A static blocklist catches known disposable domains, but it can't detect brand-new throwaway domains, catch-all configurations, or suspicious registration patterns.
 
 ---
 
@@ -31,7 +27,7 @@ A static blocklist catches known disposable domains, but it can't detect brand-n
 - **Allowlist support** — Explicitly permit domains that would otherwise be matched. The allowlist takes priority at every level of the domain hierarchy, so you can block `example.net` but allow `legit.example.net`.
 - **Flexible input** — Pass a full email address or a bare domain to any method. BurnerGuard detects which one you gave it.
 - **Batch operations** — Verify a list of emails, filter them into matched and clean buckets, or check whether any email in a set matches.
-- **Fully async** — Every verification method returns a `Promise`, so the API won't change when service mode adds network calls. In static mode, the underlying work is synchronous — the async wrapper adds negligible overhead.
+- **Fully async** — Every verification method returns a `Promise`. The underlying work is synchronous — the async wrapper adds negligible overhead.
 - **Bring your own data** — Use the bundled blocklist out of the box, load from a local file, fetch from a URL, pass an inline array, or combine multiple sources. When custom sources are provided, the bundled list steps aside unless you explicitly keep it.
 - **Stays current** — The bundled blocklist is updated automatically and published as new patch versions. Just run `npm update` to get the latest domains.
 - **Lazy-loaded and memory-conscious** — The bundled blocklist is loaded via dynamic `import()` only when `create()` is called, not at module import time. If you're using custom sources exclusively, the bundled data is never loaded at all.
@@ -180,36 +176,6 @@ const guard = await BurnerGuard.create({
 });
 ```
 
-### Service mode (coming soon)
-
-Service mode is not yet available. When it launches, you'll add an API key and the same `verify()` call will return enriched results with risk scoring. No code changes required.
-
-```typescript
-const guard = await BurnerGuard.create({
-    apiKey: 'bg_live_...',
-    threshold: 0.7
-});
-
-const result = await guard.verify('user@sketchy.example');
-// {
-//   isMatch: true,
-//   domain: 'sketchy.example',
-//   matchedOn: 'domainAge',
-//   isAllowlisted: false,
-//   verdict: 'block',
-//   riskScore: 0.94,
-//   signals: {
-//     blocklist: false,
-//     domainAgeDays: 4,
-//     mxProvider: 'catch-all',
-//     catchAll: true,
-//     roleAddress: false,
-//     patternCluster: false,
-//     velocity: false
-//   }
-// }
-```
-
 ---
 
 ## API Reference
@@ -220,8 +186,6 @@ Creates and initializes a new instance. Returns `Promise<BurnerGuard>`.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `apiKey` | `string` | — | BurnerGuard API key. Enables service mode (coming soon). |
-| `threshold` | `number` | `0.5` | Risk score threshold (0.0–1.0). Service mode only. |
 | `sources` | `DomainListSource[]` | — | Domain list sources: file path, URL, or inline array. |
 | `additionalBlockedDomains` | `string[]` | — | Extra domains to add to the blocklist. |
 | `additionalAllowedDomains` | `string[]` | — | Extra domains to add to the allowlist. |
@@ -255,7 +219,7 @@ Creates and initializes a new instance. Returns `Promise<BurnerGuard>`.
 
 ### `VerifyResult`
 
-Returned by `verify()` in static mode.
+Returned by `verify()`.
 
 ```typescript
 {
@@ -263,19 +227,6 @@ Returned by `verify()` in static mode.
     domain: string | null;   // the extracted domain, or null for invalid input
     matchedOn: string | null; // the signal that triggered the match (e.g., "blocklist"), or null
     isAllowlisted: boolean;  // true if the allowlist overrode a potential match
-}
-```
-
-### `EnrichedVerifyResult`
-
-Returned by `verify()` in service mode (coming soon). Extends `VerifyResult` with additional fields.
-
-```typescript
-{
-    // ... all VerifyResult fields, plus:
-    verdict: 'allow' | 'block' | 'suspect';
-    riskScore: number;    // 0.0 (safe) to 1.0 (certain threat)
-    signals: RiskSignals; // detailed signal breakdown
 }
 ```
 
