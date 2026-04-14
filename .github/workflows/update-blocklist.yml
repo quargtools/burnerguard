@@ -1,4 +1,4 @@
-name: Update Blocklist & Publish
+name: Update Blocklist
 
 on:
     workflow_dispatch:
@@ -9,161 +9,54 @@ on:
                 default: 'Manual run'
 
     schedule:
-        -   cron: '0 4 * * *'
+        -   cron: '0 4 1 * *'
 
-concurrency:
-    group: ${{ github.workflow }}-${{ github.ref }}
-    cancel-in-progress: true
+permissions:
+    contents: write
+    pull-requests: write
 
 jobs:
-    update_and_publish:
+    update:
         runs-on: ubuntu-latest
         steps:
-            -   name: Skipped
-                run: echo "Workflow disabled — skipped. See issue #23 to track re-enabling."
+            -   uses: actions/checkout@v6
 
-# TODO: re-enable this workflow once BOT_PAT secret is created and the
-# publish trigger gap (tag push vs GitHub Release) is resolved.
-# Tracked in issue #23.
-#
-#        permissions:
-#            contents: write
-#            pull-requests: write
-#
-#        steps:
-#            -   name: Checkout repository
-#                uses: actions/checkout@v4
-#                with:
-#                    token: ${{ secrets.BOT_PAT }}
-#
-#            -   name: Use Node.js 22.x
-#                uses: actions/setup-node@v4
-#                with:
-#                    node-version: 22.x
-#                    cache: 'npm'
-#
-#            -   name: Install dependencies
-#                run: npm ci
-#
-#            -   name: Run Blocklist Update Script
-#                run: npm run update-blocklist
-#
-#            -   name: Check for Changes
-#                id: git_status
-#                run: |
-#                    git add data/BLOCKLIST data/ALLOWLIST
-#                    if git diff --cached --quiet; then
-#                      echo "changes_detected=false" >> "$GITHUB_OUTPUT"
-#                    else
-#                      echo "changes_detected=true" >> "$GITHUB_OUTPUT"
-#                    fi
-#
-#            -   name: Configure Git user
-#                if: steps.git_status.outputs.changes_detected == 'true'
-#                run: |
-#                    git config user.name "github-actions[bot]"
-#                    git config user.email "github-actions[bot]@users.noreply.github.com"
-#
-#            -   name: Create branch and commit
-#                id: create_commit
-#                if: steps.git_status.outputs.changes_detected == 'true'
-#                run: |
-#                    BRANCH_NAME="bot/update-blocklist-$(date +%Y%m%d%H%M%S)"
-#                    git checkout -b "$BRANCH_NAME"
-#                    git commit -m "feat(blocklist): Update disposable email domains" \
-#                      -m "Automated update of blocklist and allowlist from upstream source."
-#                    git push origin "$BRANCH_NAME"
-#                    echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
-#
-#            -   name: Create PR
-#                id: create_pr
-#                if: steps.git_status.outputs.changes_detected == 'true'
-#                uses: actions/github-script@v7
-#                with:
-#                    github-token: ${{ secrets.BOT_PAT }}
-#                    script: |
-#                        const { data: pull } = await github.rest.pulls.create({
-#                          owner: context.repo.owner,
-#                          repo: context.repo.repo,
-#                          title: 'feat(blocklist): Update disposable email domains',
-#                          head: '${{ steps.create_commit.outputs.branch_name }}',
-#                          base: 'main',
-#                          body: 'Automated PR to update the disposable email domains blocklist and allowlist from upstream.',
-#                          draft: false
-#                        });
-#                        core.setOutput('pr_number', pull.number);
-#                        console.log(`Created PR #${pull.number}: ${pull.html_url}`);
-#
-#            -   name: Wait for PR checks
-#                if: steps.create_pr.outputs.pr_number
-#                uses: actions/github-script@v7
-#                with:
-#                    github-token: ${{ secrets.BOT_PAT }}
-#                    script: |
-#                        const prNumber = Number('${{ steps.create_pr.outputs.pr_number }}');
-#                        const maxAttempts = 30;
-#                        const delayMs = 10000;
-#
-#                        for (let i = 0; i < maxAttempts; i++) {
-#                          const { data: checks } = await github.rest.checks.listForRef({
-#                            owner: context.repo.owner,
-#                            repo: context.repo.repo,
-#                            ref: '${{ steps.create_commit.outputs.branch_name }}',
-#                          });
-#
-#                          const completed = checks.check_runs.every(r => r.status === 'completed');
-#                          const allPassed = checks.check_runs.every(r => r.conclusion === 'success' || r.conclusion === 'skipped');
-#
-#                          if (completed && checks.check_runs.length > 0) {
-#                            if (allPassed) {
-#                              console.log('All checks passed.');
-#                              return;
-#                            } else {
-#                              core.setFailed('One or more checks failed.');
-#                              return;
-#                            }
-#                          }
-#
-#                          console.log(`Waiting for checks... attempt ${i + 1}/${maxAttempts}`);
-#                          await new Promise(r => setTimeout(r, delayMs));
-#                        }
-#
-#                        core.setFailed('Timed out waiting for checks to complete.');
-#
-#            -   name: Merge PR
-#                if: steps.create_pr.outputs.pr_number && success()
-#                uses: actions/github-script@v7
-#                with:
-#                    github-token: ${{ secrets.BOT_PAT }}
-#                    script: |
-#                        const prNumber = Number('${{ steps.create_pr.outputs.pr_number }}');
-#                        await github.rest.pulls.merge({
-#                          owner: context.repo.owner,
-#                          repo: context.repo.repo,
-#                          pull_number: prNumber,
-#                          merge_method: 'squash',
-#                        });
-#                        console.log(`PR #${prNumber} merged successfully.`);
-#
-#            -   name: Checkout main after merge
-#                if: steps.create_pr.outputs.pr_number && success()
-#                run: |
-#                    git fetch origin main
-#                    git checkout main
-#                    git pull origin main
-#
-#            -   name: Bump version, tag, and push
-#                if: steps.create_pr.outputs.pr_number && success()
-#                run: |
-#                    CURRENT_VERSION=$(node -p "require('./package.json').version")
-#                    IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
-#                    NEW_VERSION="${major}.${minor}.$((patch + 1))"
-#                    npm version "$NEW_VERSION" --no-git-tag-version
-#
-#                    git add package.json package-lock.json
-#                    git commit -m "chore(release): v${NEW_VERSION}"
-#                    git tag "v${NEW_VERSION}"
-#                    git push origin main
-#                    git push origin "v${NEW_VERSION}"
-#                env:
-#                    GITHUB_TOKEN: ${{ secrets.BOT_PAT }}
+            -   uses: actions/setup-node@v6
+                with:
+                    node-version: 24.x
+                    cache: 'npm'
+
+            -   name: Install dependencies
+                run: npm ci
+
+            -   name: Update blocklist from upstream
+                run: npm run update-blocklist
+
+            -   name: Rebuild bundled data
+                run: npm run build
+
+            -   name: Check for changes
+                id: changes
+                run: |
+                    git add data/BLOCKLIST data/ALLOWLIST src/bundled-data.ts
+                    if git diff --cached --quiet; then
+                      echo "detected=false" >> "$GITHUB_OUTPUT"
+                    else
+                      echo "detected=true" >> "$GITHUB_OUTPUT"
+                    fi
+
+            -   name: Create pull request
+                if: steps.changes.outputs.detected == 'true'
+                run: |
+                    git config user.name "github-actions[bot]"
+                    git config user.email "github-actions[bot]@users.noreply.github.com"
+                    BRANCH="bot/update-blocklist-$(date +%Y%m%d)"
+                    git checkout -b "$BRANCH"
+                    MONTH_YEAR=$(date +"%B %Y")
+                    git commit -m "feat(blocklist): update disposable email domains — $MONTH_YEAR"
+                    git push origin "$BRANCH"
+                    gh pr create \
+                      --title "feat(blocklist): update disposable email domains — $MONTH_YEAR" \
+                      --body "Automated monthly update of blocklist and allowlist from upstream source."
+                env:
+                    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
