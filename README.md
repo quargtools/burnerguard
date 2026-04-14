@@ -190,7 +190,7 @@ Creates and initializes a new instance. Returns `Promise<BurnerGuard>`.
 | `additionalBlockedDomains` | `string[]` | — | Extra domains to add to the blocklist. |
 | `additionalAllowedDomains` | `string[]` | — | Extra domains to add to the allowlist. |
 | `useBundledBlocklist` | `boolean` | `true`\* | Whether to load the bundled blocklist. \*Defaults to `false` when custom `sources` are provided. |
-| `useBundledAllowlist` | `boolean` | `false` | Whether to load the bundled allowlist. |
+| `useBundledAllowlist` | `boolean` | `false` | **Deprecated.** Whether to load the bundled allowlist. The upstream source for this data has been removed. Use `additionalAllowedDomains` or a custom `sources` entry instead. Will be removed in a future major version. |
 
 ### Async methods
 

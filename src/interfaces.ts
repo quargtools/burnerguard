@@ -45,7 +45,10 @@ export interface BurnerGuardOptions {
     /** Whether to load the bundled blocklist. Defaults to true. */
     useBundledBlocklist?: boolean;
 
-    /** Whether to load the bundled allowlist. Defaults to false. */
+    /**
+     * Whether to load the bundled allowlist. Defaults to false.
+     * @deprecated The bundled allowlist is no longer maintained upstream and will be removed in a future major version. Use `additionalAllowedDomains` or a custom `sources` entry instead.
+     */
     useBundledAllowlist?: boolean;
 }
 
