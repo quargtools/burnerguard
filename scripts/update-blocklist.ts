@@ -9,7 +9,6 @@ interface ListOptions {
 }
 
 const UPSTREAM_BLOCKLIST_URL = 'https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/disposable_email_blocklist.conf';
-const UPSTREAM_ALLOWLIST_URL = 'https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/allowlist.conf';
 
 (async () => {
     const OUTPUT_DIR = path.resolve(__dirname, '..', 'data');
@@ -19,11 +18,6 @@ const UPSTREAM_ALLOWLIST_URL = 'https://raw.githubusercontent.com/disposable-ema
             listName: 'Blocklist',
             url: UPSTREAM_BLOCKLIST_URL,
             outputPath: 'BLOCKLIST'
-        },
-        {
-            listName: 'Allowlist',
-            url: UPSTREAM_ALLOWLIST_URL,
-            outputPath: 'ALLOWLIST'
         }
     ];
 
