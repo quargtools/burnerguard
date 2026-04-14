@@ -38,7 +38,7 @@ jobs:
             -   name: Check for changes
                 id: changes
                 run: |
-                    git add data/BLOCKLIST data/ALLOWLIST src/bundled-data.ts
+                    git add data/BLOCKLIST data/ALLOWLIST
                     if git diff --cached --quiet; then
                       echo "detected=false" >> "$GITHUB_OUTPUT"
                     else
