@@ -1,6 +1,6 @@
 {
   "name": "@quarg/burnerguard",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Detect disposable and burner email addresses. Static blocklist mode with zero dependencies, or connect to the BurnerGuard API for real-time risk scoring.",
   "keywords": [
     "email",
