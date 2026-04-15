@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import {BurnerGuard, type BurnerGuardOptions} from '../src';
+import {DomainListService} from '../src/services';
 
 const TEST_LOCAL_BLOCKLIST_PATH = path.join(__dirname, 'BLOCKLIST');
 const TEST_LOCAL_ALLOWLIST_PATH = path.join(__dirname, 'ALLOWLIST');
@@ -109,6 +110,12 @@ describe('BurnerGuard', () => {
         });
         expect(guard).toBeInstanceOf(BurnerGuard);
         expect((await guard.verify('test@yopmail.com')).isMatch).toBe(true);
+    }, 20000);
+
+    it('should throw when a URL source returns an error', async () => {
+        await expect(BurnerGuard.create({
+            sources: [{type: 'block', url: 'https://raw.githubusercontent.com/nonexistent/repo/main/404.txt'}]
+        })).rejects.toThrow(/Failed to fetch/);
     }, 20000);
 
     it('should accept an apiKey option', async () => {
@@ -248,6 +255,14 @@ describe('BurnerGuard', () => {
         expect(guard.blocklistSize).toBe(sizeBefore);
     });
 
+    it('should ignore empty strings when allowing', async () => {
+        const guard = await BurnerGuard.create();
+        const sizeBefore = guard.allowlistSize;
+        await guard.allow('');
+        await guard.allow('   ');
+        expect(guard.allowlistSize).toBe(sizeBefore);
+    });
+
     // --- Subdomain matching ---
 
     it('should detect subdomains of blocked domains', async () => {
@@ -281,6 +296,17 @@ describe('BurnerGuard', () => {
         expect((await guard.verify('user@other.spammy.com')).isMatch).toBe(true);
     });
 
+    it('should allowlist a parent domain during subdomain walk', async () => {
+        const guard = await BurnerGuard.create({
+            sources: [
+                {type: 'block', list: ['spammy.com']},
+                {type: 'allow', list: ['spammy.com']}
+            ]
+        });
+        expect((await guard.verify('user@sub.spammy.com')).isMatch).toBe(false);
+        expect((await guard.verify('user@deep.sub.spammy.com')).isMatch).toBe(false);
+    });
+
     // --- Utilities ---
 
     it('should extract domain from email', async () => {
@@ -305,4 +331,67 @@ describe('BurnerGuard', () => {
         expect(guard.blocklistSize).toBeGreaterThan(1000);
         expect(guard.allowlistSize).toBeGreaterThan(0);
     });
+});
+
+describe('DomainListService', () => {
+    const tmpDir = path.join(__dirname, 'tmp-service-test');
+
+    beforeAll(async () => {
+        await fs.mkdir(tmpDir, {recursive: true});
+    });
+
+    afterAll(async () => {
+        await fs.rm(tmpDir, {recursive: true, force: true});
+    });
+
+    it('should fetch a domain list from a URL', async () => {
+        const content = await DomainListService.fetchDomainList(
+            'https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/disposable_email_blocklist.conf'
+        );
+        expect(content).toContain('yopmail.com');
+    }, 20000);
+
+    it('should throw on a failed fetch', async () => {
+        await expect(
+            DomainListService.fetchDomainList('https://raw.githubusercontent.com/nonexistent/repo/main/404.txt')
+        ).rejects.toThrow(/Failed to fetch/);
+    }, 20000);
+
+    it('should load a file', async () => {
+        const filePath = path.join(tmpDir, 'test-load.txt');
+        await fs.writeFile(filePath, 'example.com\ntest.org', 'utf8');
+        const content = await DomainListService.loadFile(filePath, 'test file');
+        expect(content).toBe('example.com\ntest.org');
+    });
+
+    it('should throw when loading a nonexistent file', async () => {
+        await expect(
+            DomainListService.loadFile('/nonexistent/file.txt', 'missing file')
+        ).rejects.toThrow(/Failed to load missing file/);
+    });
+
+    it('should process a domain list with comments, blanks, and duplicates', () => {
+        const input = '# comment\nexample.com\n\nEXAMPLE.COM\ntest.org\n  spaced.net  ';
+        const result = DomainListService.processDomainList(input);
+        expect(result).toEqual(['example.com', 'spaced.net', 'test.org']);
+    });
+
+    it('should save a domain list to a file', async () => {
+        const filePath = await DomainListService.saveDomainList(tmpDir, 'output.txt', ['a.com', 'b.com']);
+        const content = await fs.readFile(filePath, 'utf8');
+        expect(content).toBe('a.com\nb.com');
+    });
+
+    it('should update lists end-to-end', async () => {
+        const outputDir = path.join(tmpDir, 'update-test');
+        await DomainListService.updateLists(outputDir, [
+            {
+                listName: 'Test',
+                url: 'https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/disposable_email_blocklist.conf',
+                outputPath: 'BLOCKLIST'
+            }
+        ]);
+        const content = await fs.readFile(path.join(outputDir, 'BLOCKLIST'), 'utf8');
+        expect(content).toContain('yopmail.com');
+    }, 20000);
 });

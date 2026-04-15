@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
     {
-        ignores: ['eslint.config.mjs', 'dist/**', 'node_modules/**'],
+        ignores: ['eslint.config.mjs', 'dist/**', 'node_modules/**', 'coverage/**', '*.config.ts'],
     },
 
     // ── Base configs ──────────────────────────────────────────────
@@ -18,9 +18,8 @@ export default tseslint.config(
         languageOptions: {
             globals: {
                 ...globals.node,
-                ...globals.jest,
             },
-            sourceType: 'commonjs',
+            sourceType: 'module',
             parserOptions: {
                 projectService: {
                     allowDefaultProject: ['test/*.ts', 'scripts/*.ts'],
@@ -36,20 +35,20 @@ export default tseslint.config(
             '@stylistic': stylistic,
         },
         rules: {
-            // Indentation — 4 spaces (matches .editorconfig)
-            '@stylistic/indent': ['warn', 4, { SwitchCase: 1 }],
+            // Indentation — 4 spaces
+            '@stylistic/indent': ['warn', 4, {SwitchCase: 1}],
 
-            // Quotes — single (matches .editorconfig)
-            '@stylistic/quotes': ['warn', 'single', { avoidEscape: true }],
+            // Quotes — single
+            '@stylistic/quotes': ['warn', 'single', {avoidEscape: true}],
 
             // Semicolons — always
             '@stylistic/semi': ['warn', 'always'],
 
-            // Trailing commas — ES5 style
+            // Trailing commas — never
             '@stylistic/comma-dangle': ['error', 'never'],
 
             // Brace style — 1TBS
-            '@stylistic/brace-style': ['warn', '1tbs', { allowSingleLine: true }],
+            '@stylistic/brace-style': ['warn', '1tbs', {allowSingleLine: true}],
 
             // Arrow function parens — always
             '@stylistic/arrow-parens': ['warn', 'always'],
@@ -75,7 +74,7 @@ export default tseslint.config(
             '@stylistic/block-spacing': 'warn',
 
             // No multiple empty lines
-            '@stylistic/no-multiple-empty-lines': ['warn', { max: 2, maxEOF: 1, maxBOF: 0 }],
+            '@stylistic/no-multiple-empty-lines': ['warn', {max: 2, maxEOF: 1, maxBOF: 0}],
 
             // Trailing newline
             '@stylistic/eol-last': ['warn', 'always'],
@@ -85,8 +84,8 @@ export default tseslint.config(
 
             // Member delimiter style for interfaces/types
             '@stylistic/member-delimiter-style': ['warn', {
-                multiline: { delimiter: 'semi', requireLast: true },
-                singleline: { delimiter: 'semi', requireLast: false },
+                multiline: {delimiter: 'semi', requireLast: true},
+                singleline: {delimiter: 'semi', requireLast: false},
             }],
         },
     },
@@ -94,41 +93,26 @@ export default tseslint.config(
     // ── TypeScript rules ──────────────────────────────────────────
     {
         rules: {
-            // Permit `any` — code review catches misuse
-            '@typescript-eslint/no-explicit-any': 'off',
+            // Library code should be strict about any
+            '@typescript-eslint/no-explicit-any': 'error',
 
             // Async safety
-            '@typescript-eslint/no-floating-promises': 'warn',
-            '@typescript-eslint/no-unsafe-argument': 'warn',
-
-            // Downgrade no-unsafe-* family to warn — backend has noImplicitAny: false,
-            // so these fire heavily on existing code. Tighten as the codebase matures.
-            '@typescript-eslint/no-unsafe-assignment': 'warn',
-            '@typescript-eslint/no-unsafe-member-access': 'warn',
-            '@typescript-eslint/no-unsafe-return': 'warn',
-            '@typescript-eslint/no-unsafe-call': 'warn',
-            '@typescript-eslint/no-unsafe-enum-comparison': 'warn',
-
-            // Other type-checked rules — downgrade to warn for existing code
-            '@typescript-eslint/unbound-method': 'warn',
-            '@typescript-eslint/no-redundant-type-constituents': 'warn',
-            '@typescript-eslint/no-base-to-string': 'warn',
-            '@typescript-eslint/restrict-template-expressions': 'warn',
-            '@typescript-eslint/no-misused-promises': 'warn',
-            '@typescript-eslint/no-unused-expressions': 'warn',
-            '@typescript-eslint/await-thenable': 'warn',
-            '@typescript-eslint/no-empty-object-type': 'warn',
+            '@typescript-eslint/no-floating-promises': 'error',
+            '@typescript-eslint/no-unsafe-argument': 'error',
+            '@typescript-eslint/no-unsafe-assignment': 'error',
+            '@typescript-eslint/no-unsafe-member-access': 'error',
+            '@typescript-eslint/no-unsafe-return': 'error',
+            '@typescript-eslint/no-unsafe-call': 'error',
 
             // Prefer type-only imports where possible
-            '@typescript-eslint/consistent-type-imports': ['warn', {
+            '@typescript-eslint/consistent-type-imports': ['error', {
                 prefer: 'type-imports',
                 fixStyle: 'inline-type-imports',
                 disallowTypeAnnotations: false,
             }],
 
-            // Unused variables — error on underscore-prefixed unused params
-            // per api-design §2: fix the code or lint rule, don't silence with _
-            '@typescript-eslint/no-unused-vars': ['warn', {
+            // Unused variables
+            '@typescript-eslint/no-unused-vars': ['error', {
                 argsIgnorePattern: '^_',
                 varsIgnorePattern: '^_',
                 caughtErrorsIgnorePattern: '^_',
@@ -136,60 +120,18 @@ export default tseslint.config(
 
             // Naming conventions
             '@typescript-eslint/naming-convention': ['warn',
-                // Variables — camelCase or UPPER_CASE
-                {
-                    selector: 'variable',
-                    format: ['camelCase', 'UPPER_CASE', 'PascalCase'],
-                    leadingUnderscore: 'forbid',
-                },
-                // Functions — camelCase
-                {
-                    selector: 'function',
-                    format: ['camelCase'],
-                },
-                // Class, interface, type alias, enum — PascalCase
-                {
-                    selector: 'typeLike',
-                    format: ['PascalCase'],
-                },
-                // Enum members — PascalCase
-                {
-                    selector: 'enumMember',
-                    format: ['PascalCase'],
-                },
-                // Class methods — camelCase, no underscore prefix
-                {
-                    selector: 'classMethod',
-                    format: ['camelCase'],
-                    leadingUnderscore: 'forbid',
-                },
-                // Class properties — camelCase or UPPER_CASE, no underscore prefix
-                {
-                    selector: 'classProperty',
-                    format: ['camelCase', 'UPPER_CASE'],
-                    leadingUnderscore: 'forbid',
-                },
-                // Object literal properties — no enforcement (API contracts, configs)
-                {
-                    selector: 'objectLiteralProperty',
-                    format: null,
-                },
-                // Parameters — camelCase, no underscore prefix
-                {
-                    selector: 'parameter',
-                    format: ['camelCase'],
-                    leadingUnderscore: 'forbid',
-                },
+                {selector: 'variable', format: ['camelCase', 'UPPER_CASE', 'PascalCase'], leadingUnderscore: 'forbid'},
+                {selector: 'function', format: ['camelCase']},
+                {selector: 'typeLike', format: ['PascalCase']},
+                {selector: 'enumMember', format: ['PascalCase']},
+                {selector: 'classMethod', format: ['camelCase'], leadingUnderscore: 'forbid'},
+                {selector: 'classProperty', format: ['camelCase', 'UPPER_CASE'], leadingUnderscore: 'forbid'},
+                {selector: 'objectLiteralProperty', format: null},
+                {selector: 'parameter', format: ['camelCase'], leadingUnderscore: 'allow'},
             ],
 
-            // Require return types on exported functions (documentation)
-            '@typescript-eslint/explicit-function-return-type': 'off',
-
-            // Allow empty functions (common in NestJS lifecycle hooks)
-            '@typescript-eslint/no-empty-function': 'off',
-
             // Require await in async functions
-            '@typescript-eslint/require-await': 'warn',
+            '@typescript-eslint/require-await': 'error',
         },
     },
 
@@ -197,7 +139,7 @@ export default tseslint.config(
     {
         rules: {
             // Equality — always strict
-            'eqeqeq': ['error', 'always', { null: 'ignore' }],
+            'eqeqeq': ['error', 'always', {null: 'ignore'}],
 
             // Prefer const
             'prefer-const': 'warn',
@@ -208,8 +150,8 @@ export default tseslint.config(
             // Curly braces — always (even single-line)
             'curly': ['warn', 'all'],
 
-            // No console — use NestJS Logger
-            'no-console': 'warn',
+            // No console — library code should not log
+            'no-console': 'error',
 
             // No duplicate imports
             'no-duplicate-imports': 'warn',
@@ -219,7 +161,7 @@ export default tseslint.config(
 
             // No throw literals — throw Error objects
             'no-throw-literal': 'off',
-            '@typescript-eslint/only-throw-error': 'warn',
+            '@typescript-eslint/only-throw-error': 'error',
 
             // Prefer rest params over arguments
             'prefer-rest-params': 'warn',
@@ -241,6 +183,17 @@ export default tseslint.config(
                     namespaceFrom: true,
                 },
             }],
+        },
+    },
+
+    // ── Test file overrides ───────────────────────────────────────
+    {
+        files: ['test/**/*.ts'],
+        rules: {
+            '@typescript-eslint/no-non-null-assertion': 'off',
+            '@typescript-eslint/no-unsafe-member-access': 'off',
+            '@typescript-eslint/require-await': 'off',
+            'no-console': 'off',
         },
     },
 );

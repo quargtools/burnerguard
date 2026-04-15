@@ -225,12 +225,11 @@ export class BurnerGuard {
      * Calls the BurnerGuard API for an enriched verification result.
      * @throws Error until the service is available.
      */
-    // eslint-disable-next-line @typescript-eslint/naming-convention, @typescript-eslint/require-await
+    // eslint-disable-next-line @typescript-eslint/require-await
     private async verifyRemote(_emailOrDomain: string, _options?: VerifyOptions): Promise<VerifyResult> {
-        // TODO: Implement when the BurnerGuard API is available.
         throw new Error(
             'BurnerGuard service mode is not yet available. '
-            + 'Remove the apiKey option to use static mode, or visit https://burnerguard.com for updates.'
+            + 'Remove the apiKey option to use static mode, or visit https://github.com/quargtools/burnerguard for updates.'
         );
     }
 
